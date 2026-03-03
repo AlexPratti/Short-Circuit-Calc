@@ -6,7 +6,7 @@ def main():
     st.set_page_config(page_title="Short-Circuit-Calc Pro", layout="wide")
     st.title("⚡ Gestão, Dimensionamento e Seletividade Industrial")
 
-    # --- TABELA DE CABOS COMERCIAIS (Capacidade B1 - 3 condutores carregados) ---
+    # --- TABELA DE CABOS COMERCIAIS ---
     CABOS_COMERCIAIS = [2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120, 150, 185, 240, 300]
     AMPACIDADE = [24, 32, 41, 57, 76, 101, 125, 151, 192, 232, 269, 309, 353, 415, 473]
 
@@ -37,36 +37,58 @@ def main():
         with cols_dist[i % 4]:
             dist_ccms[i+1] = st.number_input(f"Dist. QGBT -> CCM {i+1} (m)", value=20.0, key=f"d_{i}")
 
-    # --- 3. GESTÃO DE MOTORES (EDITÁVEL) ---
+    # --- 3. GESTÃO DE MOTORES ---
     if 'df_motores' not in st.session_state:
-        st.session_state.df_motores = pd.DataFrame(columns=['Selecionar', 'Potência (CV)', 'Quantidade', 'Partida', 'CCM Destino', 'Status'])
+        st.session_state.df_motores = pd.DataFrame(columns=['Selecionar', 'Equipamento', 'Potência (CV)', 'Quantidade', 'Partida', 'CCM Destino', 'Status'])
 
     st.header("📋 Cadastro de Motores")
     with st.container(border=True):
-        c1, c2, c3, c4 = st.columns(4)
+        c1, c2, c3, c4, c5 = st.columns([2, 1, 1, 1.5, 1])
         with c1:
-            pot = st.selectbox("Potência (CV)", options=[0.5, 1, 2, 3, 5, 7.5, 10, 15, 20, 30, 50, 100], index=None)
+            nome_eq = st.text_input("Equipamento", placeholder="Ex: Bomba 01")
         with c2:
-            qtd = st.number_input("Qtd", min_value=1, value=1)
+            pot = st.selectbox("Potência (CV)", options=[0.5, 1, 2, 3, 5, 7.5, 10, 15, 20, 30, 50, 100], index=None)
         with c3:
-            part = st.selectbox("Partida", options=["Direta", "Estrela-Triângulo", "Inversor", "Soft-Starter"])
+            qtd = st.number_input("Qtd", min_value=1, value=1)
         with c4:
+            part = st.selectbox("Partida", options=["Direta", "Estrela-Triângulo", "Inversor", "Soft-Starter"])
+        with c5:
             dest = st.selectbox("CCM", options=list(range(1, int(n_ccm) + 1)))
 
         if st.button("➕ Adicionar à Lista", type="primary", use_container_width=True):
-            if pot:
+            if pot and nome_eq:
                 st.session_state.df_motores['Status'] = 'Antigo'
-                nova = pd.DataFrame([{'Selecionar': False, 'Potência (CV)': float(pot), 'Quantidade': int(qtd), 'Partida': part, 'CCM Destino': int(dest), 'Status': 'Novo'}])
+                nova = pd.DataFrame([{
+                    'Selecionar': False, 
+                    'Equipamento': nome_eq,
+                    'Potência (CV)': float(pot), 
+                    'Quantidade': int(qtd), 
+                    'Partida': part, 
+                    'CCM Destino': int(dest), 
+                    'Status': 'Novo'
+                }])
                 st.session_state.df_motores = pd.concat([st.session_state.df_motores, nova], ignore_index=True)
                 st.rerun()
+            else:
+                st.warning("Preencha o Nome do Equipamento e a Potência.")
 
     # Tabela Editável
     if not st.session_state.df_motores.empty:
         st.header("🏭 Lista de Cargas")
+        
+        # Botão para excluir selecionados
+        if st.button("🗑️ Excluir Linhas Selecionadas"):
+            st.session_state.df_motores = st.session_state.df_motores[st.session_state.df_motores['Selecionar'] == False]
+            st.rerun()
+
         edited_df = st.data_editor(
             st.session_state.df_motores.style.apply(lambda r: ['background-color: #0047AB; color: white' if r['Status']=='Novo' else '' for _ in r], axis=1),
-            column_config={"Selecionar": st.column_config.CheckboxColumn("Excluir?"), "Status": None},
-            use_container_width=True, key="edit_v6"
+            column_config={
+                "Selecionar": st.column_config.CheckboxColumn("Excluir?"),
+                "Equipamento": st.column_config.TextColumn("Equipamento", width="medium"),
+                "Status": None
+            },
+            use_container_width=True, key="edit_v7"
         )
         st.session_state.df_motores = edited_df
 
@@ -76,7 +98,11 @@ def main():
             # QGBT CALCULOS
             total_cv = (st.session_state.df_motores['Potência (CV)'] * st.session_state.df_motores['Quantidade']).sum()
             in_total = (total_cv * 736) / (v_sec * 1.732 * 0.85 * 0.9)
-            icc_qgbt = (v_sec / (1.732 * ((z_pct/100)*((v_sec**2)/(p_trafo*1000)))))
+            
+            try:
+                icc_qgbt = (v_sec / (1.732 * ((z_pct/100)*((v_sec**2)/(p_trafo*1000)))))
+            except ZeroDivisionError:
+                icc_qgbt = 0
             
             disj_qgbt = in_total * 1.25 # Proteção Geral
             
@@ -109,7 +135,7 @@ def main():
             
             st.subheader("📊 Resultados de Coordenação e Cabos")
             st.table(pd.DataFrame(res_ccm))
-            st.info(f"💡 Dica de Seletividade: O disjuntor do QGBT ({disj_qgbt:.0f}A) deve ter sua curva de disparo (Instantâneo) ajustada acima da corrente de partida do maior motor do CCM.")
+            st.info(f"💡 Dica de Seletividade: O disjuntor do QGBT ({disj_qgbt:.0f}A) deve ter sua curva de disparo ajustada acima da partida do maior motor.")
 
 if __name__ == "__main__":
     main()
