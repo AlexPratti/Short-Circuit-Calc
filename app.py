@@ -6,7 +6,7 @@ def main():
     st.set_page_config(page_title="Short-Circuit-Calc Pro", layout="wide")
     st.title("⚡ Gestão, Dimensionamento e Seletividade Industrial")
 
-    # --- TABELA DE CABOS COMERCIAIS (Capacidade B1 - 3 condutores carregados) ---
+    # --- TABELA DE CABOS COMERCIAIS ---
     CABOS_COMERCIAIS = [2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120, 150, 185, 240, 300]
     AMPACIDADE = [24, 32, 41, 57, 76, 101, 125, 151, 192, 232, 269, 309, 353, 415, 473]
 
@@ -20,8 +20,8 @@ def main():
     # --- 1. PARÂMETROS DA SUBESTAÇÃO (SIDEBAR) ---
     with st.sidebar:
         st.header("🔌 Parâmetros da SE")
-        scc_rede = st.number_input("Scc Concessionária (MVA)", value=0.0)
-        p_trafo = st.number_input("Potência Trafo (kVA)", value=1000.0)
+        scc_rede = st.number_input("Scc Concessionária (MVA)", value=20.0)
+        p_trafo = st.number_input("Potência Trafo (kVA)", value=225.0)
         v_sec = st.number_input("Tensão (V)", value=380.0)
         z_pct = st.number_input("Impedância Z% (Trafo)", value=5.0)
         dist_se_qgbt = st.number_input("Distância SE ao QGBT (m)", value=15.0)
@@ -30,7 +30,7 @@ def main():
         fator_coord = st.slider("Margem de Seletividade (In_qgbt / In_ccm)", 1.2, 2.5, 1.5)
 
     # --- 2. CONFIGURAÇÃO DE CCMs ---
-    n_ccm = st.number_input("Quantidade de CCMs", min_value=1, max_value=10, value=1)
+    n_ccm = st.number_input("Quantidade de CCMs", min_value=1, max_value=10, value=2)
     dist_ccms = {}
     cols_dist = st.columns(4)
     for i in range(int(n_ccm)):
@@ -38,8 +38,11 @@ def main():
             dist_ccms[i+1] = st.number_input(f"Dist. QGBT -> CCM {i+1} (m)", value=20.0, key=f"d_{i}")
 
     # --- 3. GESTÃO DE MOTORES ---
+    # Definição estrita das colunas para evitar duplicidade
+    colunas_lista = ['Selecionar', 'Equipamento', 'Motor (CV)', 'Quantidade', 'Partida', 'CCM Destino', 'Status']
+    
     if 'df_motores' not in st.session_state:
-        st.session_state.df_motores = pd.DataFrame(columns=['Selecionar', 'Equipamento', 'Motor (CV)', 'Quantidade', 'Partida', 'CCM Destino', 'Status'])
+        st.session_state.df_motores = pd.DataFrame(columns=colunas_lista)
 
     st.header("📋 Cadastro de Motores")
     with st.container(border=True):
@@ -69,30 +72,30 @@ def main():
                 }])
                 st.session_state.df_motores = pd.concat([st.session_state.df_motores, nova], ignore_index=True)
                 st.rerun()
-            else:
-                st.warning("Preencha o Nome do Equipamento e a Potência do Motor.")
 
-    # Tabela Editável
+    # --- LISTA DE CARGAS (TABELA) ---
     if not st.session_state.df_motores.empty:
         st.header("🏭 Lista de Cargas")
         
-        if st.button("🗑️ Excluir Linhas Selecionadas"):
-            st.session_state.df_motores = st.session_state.df_motores[st.session_state.df_motores['Selecionar'] == False]
-            st.rerun()
+        col_btn, _ = st.columns([1, 4])
+        with col_btn:
+            if st.button("🗑️ Excluir Linhas Selecionadas"):
+                st.session_state.df_motores = st.session_state.df_motores[st.session_state.df_motores['Selecionar'] == False]
+                st.rerun()
 
-        # Correção no style: Garantimos que o subset de colunas exista no DF
-        cols_atuais = st.session_state.df_motores.columns.tolist()
+        # Garante que o DataFrame exibido use apenas as colunas corretas e na ordem certa
+        df_exibir = st.session_state.df_motores[colunas_lista]
+
         edited_df = st.data_editor(
-            st.session_state.df_motores.style.apply(
-                lambda r: ['background-color: #0047AB; color: white' if r['Status']=='Novo' else '' for _ in r], axis=1
-            ),
+            df_exibir.style.apply(lambda r: ['background-color: #0047AB; color: white' if r['Status']=='Novo' else '' for _ in r], axis=1),
             column_config={
                 "Selecionar": st.column_config.CheckboxColumn("Excluir?"),
-                "Equipamento": st.column_config.TextColumn("Equipamento", width="medium"),
+                "Equipamento": st.column_config.TextColumn("Equipamento"),
                 "Motor (CV)": st.column_config.NumberColumn("Motor (CV)", format="%.1f"),
-                "Status": None
+                "Status": None # Esconde a coluna de controle
             },
-            use_container_width=True, key="edit_v9"
+            use_container_width=True, 
+            key="edit_v10"
         )
         st.session_state.df_motores = edited_df
 
@@ -103,8 +106,7 @@ def main():
             in_total = (total_cv * 736) / (v_sec * 1.732 * 0.85 * 0.9)
             
             try:
-                z_ohm = (z_pct/100) * (v_sec**2 / (p_trafo * 1000))
-                icc_qgbt = v_sec / (1.732 * z_ohm)
+                icc_qgbt = (v_sec / (1.732 * ((z_pct/100)*((v_sec**2)/(p_trafo*1000)))))
             except:
                 icc_qgbt = 0
             
@@ -133,7 +135,7 @@ def main():
                     "Icc Local (kA)": f"{(icc_qgbt * 0.85)/1000:.2f}"
                 })
             
-            st.subheader("📊 Resultados de Coordenação e Cabos")
+            st.subheader("📊 Resultados de Dimensionamento")
             st.table(pd.DataFrame(res_ccm))
 
 if __name__ == "__main__":
