@@ -1,6 +1,16 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+from supabase import create_client, Client
+
+# --- CONFIGURAÇÃO SUPABASE ---
+# Certifique-se de adicionar SUPABASE_URL e SUPABASE_KEY nos Secrets do Streamlit Cloud
+try:
+    url: str = st.secrets["SUPABASE_URL"]
+    key: str = st.secrets["SUPABASE_KEY"]
+    supabase: Client = create_client(url, key)
+except Exception as e:
+    st.error("Erro nas credenciais do Supabase. Verifique os Secrets.")
 
 def main():
     st.set_page_config(page_title="Short-Circuit-Calc Pro", layout="wide")
@@ -38,9 +48,7 @@ def main():
             dist_ccms[i+1] = st.number_input(f"Dist. QGBT -> CCM {i+1} (m)", value=20.0, key=f"d_{i}")
 
     # --- 3. GESTÃO DE MOTORES ---
-    # Definição estrita das colunas para evitar duplicidade
     colunas_lista = ['Selecionar', 'Equipamento', 'Motor (CV)', 'Quantidade', 'Partida', 'CCM Destino', 'Status']
-    
     if 'df_motores' not in st.session_state:
         st.session_state.df_motores = pd.DataFrame(columns=colunas_lista)
 
@@ -73,29 +81,21 @@ def main():
                 st.session_state.df_motores = pd.concat([st.session_state.df_motores, nova], ignore_index=True)
                 st.rerun()
 
-    # --- LISTA DE CARGAS (TABELA) ---
+    # --- LISTA DE CARGAS ---
     if not st.session_state.df_motores.empty:
         st.header("🏭 Lista de Cargas")
-        
-        col_btn, _ = st.columns([1, 4])
-        with col_btn:
-            if st.button("🗑️ Excluir Linhas Selecionadas"):
-                st.session_state.df_motores = st.session_state.df_motores[st.session_state.df_motores['Selecionar'] == False]
-                st.rerun()
+        if st.button("🗑️ Excluir Linhas Selecionadas"):
+            st.session_state.df_motores = st.session_state.df_motores[st.session_state.df_motores['Selecionar'] == False]
+            st.rerun()
 
-        # Garante que o DataFrame exibido use apenas as colunas corretas e na ordem certa
         df_exibir = st.session_state.df_motores[colunas_lista]
-
         edited_df = st.data_editor(
             df_exibir.style.apply(lambda r: ['background-color: #0047AB; color: white' if r['Status']=='Novo' else '' for _ in r], axis=1),
             column_config={
                 "Selecionar": st.column_config.CheckboxColumn("Excluir?"),
-                "Equipamento": st.column_config.TextColumn("Equipamento"),
-                "Motor (CV)": st.column_config.NumberColumn("Motor (CV)", format="%.1f"),
-                "Status": None # Esconde a coluna de controle
+                "Status": None
             },
-            use_container_width=True, 
-            key="edit_v10"
+            use_container_width=True, key="edit_v_final"
         )
         st.session_state.df_motores = edited_df
 
@@ -132,11 +132,35 @@ def main():
                     "Disjuntor CCM": f"{disj_ccm:.0f} A",
                     "Cabo Sugerido": f"{cabo} mm²",
                     "Coordenação": coord_ok,
-                    "Icc Local (kA)": f"{(icc_qgbt * 0.85)/1000:.2f}"
+                    "Icc Local (kA)": round((icc_qgbt * 0.85)/1000, 2)
                 })
             
+            st.session_state.resultados_calculados = res_ccm
             st.subheader("📊 Resultados de Dimensionamento")
             st.table(pd.DataFrame(res_ccm))
+
+    # --- 5. INTEGRAÇÃO SUPABASE (EXPORTAÇÃO) ---
+    if 'resultados_calculados' in st.session_state:
+        st.divider()
+        st.subheader("📤 Exportar Dados para Energia Incidente")
+        c_sel, c_btn = st.columns([3, 1])
+        
+        with c_sel:
+            opcao_painel = st.selectbox("Selecione o Painel para enviar ao Banco de Dados:", 
+                                       [r["Painel"] for r in st.session_state.resultados_calculados])
+        
+        with c_btn:
+            if st.button("💾 Registrar no Supabase", use_container_width=True):
+                dados_painel = next(item for item in st.session_state.resultados_calculados if item["Painel"] == opcao_painel)
+                try:
+                    supabase.table("calculos_curto").insert({
+                        "tag_painel": dados_painel["Painel"],
+                        "icc_ka": float(dados_painel["Icc Local (kA)"]),
+                        "v_sec": float(v_sec)
+                    }).execute()
+                    st.toast(f"✅ {opcao_painel} registrado com sucesso!", icon='🚀')
+                except Exception as e:
+                    st.error(f"Erro ao salvar: {e}")
 
 if __name__ == "__main__":
     main()
