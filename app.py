@@ -27,25 +27,21 @@ def main():
                 return CABOS_COMERCIAIS[i], cap
         return 300, 473
 
-    # --- 2. PARÂMETROS DA SE (SIDEBAR) ---
+    # --- 2. PARÂMETROS DA SE ---
     with st.sidebar:
         st.header("🔌 Parâmetros da SE")
         p_trafo = st.number_input("Potência Trafo (kVA)", value=225.0)
         v_sec = st.number_input("Tensão (V)", value=380.0)
         z_pct = st.number_input("Impedância Z% (Trafo)", value=5.0)
         dist_se_qgbt = st.number_input("Distância SE ao QGBT (m)", value=15.0)
-        st.divider()
-        st.header("🛡️ Critérios de Seletividade")
-        fator_coord = st.slider("Margem de Seletividade", 1.2, 2.5, 1.5)
 
     # --- 3. CONFIGURAÇÃO DE CCMs ---
     n_ccm = st.number_input("Quantidade de CCMs", min_value=1, value=2)
     dist_ccms = {i+1: st.number_input(f"Dist. CCM {i+1} (m)", value=20.0, key=f"d_{i}") for i in range(int(n_ccm))}
 
     # --- 4. GESTÃO DE MOTORES ---
-    col_lista = ['Selecionar', 'Equipamento', 'Motor (CV)', 'Quantidade', 'Partida', 'CCM Destino', 'Status']
     if 'df_motores' not in st.session_state:
-        st.session_state.df_motores = pd.DataFrame(columns=col_lista)
+        st.session_state.df_motores = pd.DataFrame(columns=['Selecionar', 'Equipamento', 'Motor (CV)', 'Quantidade', 'Partida', 'CCM Destino', 'Status'])
 
     st.header("📋 Cadastro de Motores")
     with st.container(border=True):
@@ -65,18 +61,13 @@ def main():
     # --- LISTA DE CARGAS ---
     if not st.session_state.df_motores.empty:
         st.header("🏭 Lista de Cargas")
-        if st.button("🗑️ Excluir Selecionados"):
-            st.session_state.df_motores = st.session_state.df_motores[st.session_state.df_motores['Selecionar'] == False]
-            st.rerun()
-
-        edited_df = st.data_editor(st.session_state.df_motores[col_lista], use_container_width=True, key="editor_v14")
+        edited_df = st.data_editor(st.session_state.df_motores, use_container_width=True, key="editor_v15")
         st.session_state.df_motores = edited_df
 
         # --- 5. EXECUTAR CÁLCULOS ---
         st.divider()
         if st.button("🚀 EXECUTAR DIMENSIONAMENTO COMPLETO", type="secondary", use_container_width=True):
             icc_qgbt = v_sec / (1.732 * ((z_pct/100)*((v_sec**2)/(p_trafo*1000))))
-            
             res_ccm = []
             for i in range(1, int(n_ccm) + 1):
                 m_ccm = st.session_state.df_motores[st.session_state.df_motores['CCM Destino'] == i]
@@ -85,42 +76,45 @@ def main():
                 in_ccm = (cv_ccm * 736) / (v_sec * 1.732 * 0.85 * 0.9)
                 s_queda = (1.732 * dist_ccms[i] * in_ccm * 0.85) / (56 * (v_sec * 0.03))
                 cabo, _ = sugerir_cabo(in_ccm, s_queda)
-                
                 res_ccm.append({
                     "Painel": f"CCM {i}",
                     "Carga (CV)": f"{cv_ccm:.1f}",
                     "Cabo": f"{cabo} mm²",
                     "Icc Local (kA)": round((icc_qgbt * 0.85)/1000, 4)
                 })
-            
-            # Persiste os resultados no estado da sessão
             st.session_state.resultados_finais = res_ccm
 
-        # Exibição da Tabela de Resultados (se existirem resultados salvos)
-        if 'resultados_finais' in st.session_state:
-            st.subheader("📊 Resultados")
-            st.table(pd.DataFrame(st.session_state.resultados_finais))
+    # --- ÁREA DE RESULTADOS E EXPORTAÇÃO ---
+    if 'resultados_finais' in st.session_state:
+        st.subheader("📊 Resultados")
+        st.table(pd.DataFrame(st.session_state.resultados_finais))
 
-            # --- 6. EXPORTAÇÃO SUPABASE ---
-            st.divider()
-            st.subheader("📤 Exportar para Energia Incidente")
-            
-            opcoes_painel = [r["Painel"] for r in st.session_state.resultados_finais]
-            
-            # Usando uma chave única para o selectbox para evitar conflitos no recarregamento
-            opcao = st.selectbox("Selecione o Painel para enviar:", options=opcoes_painel, key="sel_ccm_export")
-            
+        st.divider()
+        st.subheader("📤 Exportar para Energia Incidente")
+        
+        # O uso de colunas ajuda a manter o selectbox visível
+        c_sel, c_btn = st.columns([3, 2])
+        
+        opcoes = [r["Painel"] for r in st.session_state.resultados_finais]
+        
+        with c_sel:
+            # Menu de seleção
+            escolha = st.selectbox("Selecione o Painel:", options=opcoes, key="menu_export_final")
+        
+        with c_btn:
+            st.write(" ") # Espaçamento lateral
+            st.write(" ") 
             if st.button("💾 Salvar no Supabase", use_container_width=True):
-                dados = next(item for item in st.session_state.resultados_finais if item["Painel"] == opcao)
+                dados = next(item for item in st.session_state.resultados_finais if item["Painel"] == escolha)
                 try:
                     supabase.table("calculos_curto").insert({
                         "tag_painel": dados["Painel"],
                         "icc_ka": float(dados["Icc Local (kA)"]),
                         "v_sec": float(v_sec)
                     }).execute()
-                    st.toast(f"✅ {opcao} enviado com sucesso!", icon='🚀')
+                    st.success(f"✅ {escolha} salvo no banco!")
                 except Exception as e:
-                    st.error(f"Erro ao salvar no banco de dados: {e}")
+                    st.error(f"Erro: {e}")
 
 if __name__ == "__main__":
     main()
