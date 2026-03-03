@@ -4,7 +4,6 @@ import numpy as np
 from supabase import create_client, Client
 
 # --- 1. CONEXÃO COM O BANCO DE DADOS (SUPABASE) ---
-# Utilizando as suas credenciais fornecidas
 URL_SUPABASE = "https://lfgqxphittdatzknwkqw.supabase.co" 
 KEY_SUPABASE = "sb_publishable_zLiarara0IVVcwQm6oR2IQ_Sb0YOWTe" 
 
@@ -70,7 +69,7 @@ def main():
             st.session_state.df_motores = st.session_state.df_motores[st.session_state.df_motores['Selecionar'] == False]
             st.rerun()
 
-        edited_df = st.data_editor(st.session_state.df_motores[col_lista], use_container_width=True, key="editor_v13")
+        edited_df = st.data_editor(st.session_state.df_motores[col_lista], use_container_width=True, key="editor_v14")
         st.session_state.df_motores = edited_df
 
         # --- 5. EXECUTAR CÁLCULOS ---
@@ -94,24 +93,23 @@ def main():
                     "Icc Local (kA)": round((icc_qgbt * 0.85)/1000, 4)
                 })
             
-            # SALVA OS RESULTADOS NO SESSION STATE PARA O SELETOR ABAIXO
+            # Persiste os resultados no estado da sessão
             st.session_state.resultados_finais = res_ccm
-            st.subheader("📊 Resultados")
-            st.table(pd.DataFrame(res_ccm))
 
-    # --- 6. EXPORTAÇÃO SUPABASE ---
-    if 'resultados_finais' in st.session_state:
-        st.divider()
-        st.subheader("📤 Exportar para Energia Incidente")
-        c_sel, c_btn = st.columns([3, 1])
-        
-        with c_sel:
-            # Puxa os nomes dos painéis que estão na tabela de resultados acima
+        # Exibição da Tabela de Resultados (se existirem resultados salvos)
+        if 'resultados_finais' in st.session_state:
+            st.subheader("📊 Resultados")
+            st.table(pd.DataFrame(st.session_state.resultados_finais))
+
+            # --- 6. EXPORTAÇÃO SUPABASE ---
+            st.divider()
+            st.subheader("📤 Exportar para Energia Incidente")
+            
             opcoes_painel = [r["Painel"] for r in st.session_state.resultados_finais]
-            opcao = st.selectbox("Selecione o Painel para enviar:", options=opcoes_painel)
-        
-        with c_btn:
-            st.write("") # Alinhamento
+            
+            # Usando uma chave única para o selectbox para evitar conflitos no recarregamento
+            opcao = st.selectbox("Selecione o Painel para enviar:", options=opcoes_painel, key="sel_ccm_export")
+            
             if st.button("💾 Salvar no Supabase", use_container_width=True):
                 dados = next(item for item in st.session_state.resultados_finais if item["Painel"] == opcao)
                 try:
@@ -122,7 +120,7 @@ def main():
                     }).execute()
                     st.toast(f"✅ {opcao} enviado com sucesso!", icon='🚀')
                 except Exception as e:
-                    st.error(f"Erro ao salvar: {e}")
+                    st.error(f"Erro ao salvar no banco de dados: {e}")
 
 if __name__ == "__main__":
     main()
