@@ -6,7 +6,7 @@ def main():
     st.set_page_config(page_title="Short-Circuit-Calc Pro", layout="wide")
     st.title("⚡ Gestão, Dimensionamento e Seletividade Industrial")
 
-    # --- TABELA DE CABOS COMERCIAIS ---
+    # --- TABELA DE CABOS COMERCIAIS (Capacidade B1 - 3 condutores carregados) ---
     CABOS_COMERCIAIS = [2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120, 150, 185, 240, 300]
     AMPACIDADE = [24, 32, 41, 57, 76, 101, 125, 151, 192, 232, 269, 309, 353, 415, 473]
 
@@ -45,7 +45,7 @@ def main():
     with st.container(border=True):
         c1, c2, c3, c4, c5 = st.columns([2, 1, 1, 1.5, 1])
         with c1:
-            nome_eq = st.text_input("Equipamento", placeholder="Ex: Esteira Transportadora")
+            nome_eq = st.text_input("Equipamento", placeholder="Ex: Moedor")
         with c2:
             pot = st.selectbox("Motor (CV)", options=[0.5, 1, 2, 3, 5, 7.5, 10, 15, 20, 30, 50, 100], index=None)
         with c3:
@@ -80,27 +80,32 @@ def main():
             st.session_state.df_motores = st.session_state.df_motores[st.session_state.df_motores['Selecionar'] == False]
             st.rerun()
 
+        # Correção no style: Garantimos que o subset de colunas exista no DF
+        cols_atuais = st.session_state.df_motores.columns.tolist()
         edited_df = st.data_editor(
-            st.session_state.df_motores.style.apply(lambda r: ['background-color: #0047AB; color: white' if r['Status']=='Novo' else '' for _ in r], axis=1),
+            st.session_state.df_motores.style.apply(
+                lambda r: ['background-color: #0047AB; color: white' if r['Status']=='Novo' else '' for _ in r], axis=1
+            ),
             column_config={
                 "Selecionar": st.column_config.CheckboxColumn("Excluir?"),
                 "Equipamento": st.column_config.TextColumn("Equipamento", width="medium"),
+                "Motor (CV)": st.column_config.NumberColumn("Motor (CV)", format="%.1f"),
                 "Status": None
             },
-            use_container_width=True, key="edit_v8"
+            use_container_width=True, key="edit_v9"
         )
         st.session_state.df_motores = edited_df
 
         # --- 4. EXECUTAR CÁLCULOS ---
         st.divider()
         if st.button("🚀 EXECUTAR DIMENSIONAMENTO COMPLETO", type="secondary", use_container_width=True):
-            # QGBT CALCULOS - Usa a coluna 'Motor (CV)' para o cálculo total
             total_cv = (st.session_state.df_motores['Motor (CV)'] * st.session_state.df_motores['Quantidade']).sum()
             in_total = (total_cv * 736) / (v_sec * 1.732 * 0.85 * 0.9)
             
             try:
-                icc_qgbt = (v_sec / (1.732 * ((z_pct/100)*((v_sec**2)/(p_trafo*1000)))))
-            except ZeroDivisionError:
+                z_ohm = (z_pct/100) * (v_sec**2 / (p_trafo * 1000))
+                icc_qgbt = v_sec / (1.732 * z_ohm)
+            except:
                 icc_qgbt = 0
             
             disj_qgbt = in_total * 1.25 
@@ -115,11 +120,9 @@ def main():
                 
                 in_ccm = (cv_ccm * 736) / (v_sec * 1.732 * 0.85 * 0.9)
                 disj_ccm = in_ccm * 1.25
-                
                 s_queda = (1.732 * dist_ccms[i] * in_ccm * 0.85) / (56 * (v_sec * 0.03))
-                cabo, amp = sugerir_cabo(in_ccm, s_queda)
-                
-                coord_ok = "✅ OK" if (disj_qgbt / disj_ccm) >= fator_coord else "⚠️ Reajustar"
+                cabo, _ = sugerir_cabo(in_ccm, s_queda)
+                coord_ok = "✅ OK" if (disj_qgbt / (disj_ccm if disj_ccm > 0 else 1)) >= fator_coord else "⚠️ Reajustar"
 
                 res_ccm.append({
                     "Painel": f"CCM {i}",
@@ -132,7 +135,6 @@ def main():
             
             st.subheader("📊 Resultados de Coordenação e Cabos")
             st.table(pd.DataFrame(res_ccm))
-            st.info(f"💡 Dica de Seletividade: Ajuste o disjuntor do QGBT ({disj_qgbt:.0f}A) considerando a partida do motor de maior potência.")
 
 if __name__ == "__main__":
     main()
