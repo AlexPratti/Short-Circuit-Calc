@@ -17,7 +17,7 @@ def main():
     st.set_page_config(page_title="Short-Circuit-Calc Pro", layout="wide")
     st.title("⚡ Gestão, Dimensionamento e Seletividade Industrial")
 
-    # --- TABELA DE CABOS COMERCIAIS ---
+    # --- TABELA DE CABOS ---
     CABOS_COMERCIAIS = [2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120, 150, 185, 240, 300]
     AMPACIDADE = [24, 32, 41, 57, 76, 101, 125, 151, 192, 232, 269, 309, 353, 415, 473]
 
@@ -28,10 +28,9 @@ def main():
                 return CABOS_COMERCIAIS[i], cap
         return 300, 473
 
-    # --- 1. PARÂMETROS DA SUBESTAÇÃO (SIDEBAR) ---
+    # --- 2. PARÂMETROS DA SE (SIDEBAR) ---
     with st.sidebar:
         st.header("🔌 Parâmetros da SE")
-        scc_rede = st.number_input("Scc Concessionária (MVA)", value=20.0)
         p_trafo = st.number_input("Potência Trafo (kVA)", value=225.0)
         v_sec = st.number_input("Tensão (V)", value=380.0)
         z_pct = st.number_input("Impedância Z% (Trafo)", value=5.0)
@@ -40,15 +39,11 @@ def main():
         st.header("🛡️ Critérios de Seletividade")
         fator_coord = st.slider("Margem de Seletividade", 1.2, 2.5, 1.5)
 
-    # --- 2. CONFIGURAÇÃO DE CCMs ---
-    n_ccm = st.number_input("Quantidade de CCMs", min_value=1, max_value=10, value=2)
-    dist_ccms = {}
-    cols_dist = st.columns(4)
-    for i in range(int(n_ccm)):
-        with cols_dist[i % 4]:
-            dist_ccms[i+1] = st.number_input(f"Dist. CCM {i+1} (m)", value=20.0, key=f"d_{i}")
+    # --- 3. CONFIGURAÇÃO DE CCMs ---
+    n_ccm = st.number_input("Quantidade de CCMs", min_value=1, value=2)
+    dist_ccms = {i+1: st.number_input(f"Dist. CCM {i+1} (m)", value=20.0, key=f"d_{i}") for i in range(int(n_ccm))}
 
-    # --- 3. GESTÃO DE MOTORES ---
+    # --- 4. GESTÃO DE MOTORES ---
     col_lista = ['Selecionar', 'Equipamento', 'Motor (CV)', 'Quantidade', 'Partida', 'CCM Destino', 'Status']
     if 'df_motores' not in st.session_state:
         st.session_state.df_motores = pd.DataFrame(columns=col_lista)
@@ -56,11 +51,11 @@ def main():
     st.header("📋 Cadastro de Motores")
     with st.container(border=True):
         c1, c2, c3, c4, c5 = st.columns([2, 1, 1, 1.5, 1])
-        with c1: nome_eq = st.text_input("Equipamento", placeholder="Ex: Moedor")
+        with c1: nome_eq = st.text_input("Equipamento")
         with c2: pot = st.selectbox("Motor (CV)", options=[0.5, 1, 2, 3, 5, 7.5, 10, 15, 20, 30, 50, 100], index=None)
-        with c3: qtd = st.number_input("Qtd Motores", min_value=1, value=1)
+        with c3: qtd = st.number_input("Qtd", min_value=1, value=1)
         with c4: part = st.selectbox("Partida", options=["Direta", "Estrela-Triângulo", "Inversor", "Soft-Starter"])
-        with c5: dest = st.selectbox("CCM Destino", options=list(range(1, int(n_ccm) + 1)))
+        with c5: dest = st.selectbox("CCM", options=list(range(1, int(n_ccm) + 1)))
 
         if st.button("➕ Adicionar à Lista", type="primary", use_container_width=True):
             if pot and nome_eq:
@@ -68,25 +63,19 @@ def main():
                 st.session_state.df_motores = pd.concat([st.session_state.df_motores, nova], ignore_index=True)
                 st.rerun()
 
-    # --- TABELA DE CARGAS ---
+    # --- LISTA DE CARGAS ---
     if not st.session_state.df_motores.empty:
         st.header("🏭 Lista de Cargas")
-        if st.button("🗑️ Excluir Linhas Selecionadas"):
+        if st.button("🗑️ Excluir Selecionados"):
             st.session_state.df_motores = st.session_state.df_motores[st.session_state.df_motores['Selecionar'] == False]
             st.rerun()
 
-        edited_df = st.data_editor(
-            st.session_state.df_motores[col_lista],
-            column_config={"Selecionar": st.column_config.CheckboxColumn("Excluir?"), "Status": None},
-            use_container_width=True, key="editor_v12"
-        )
+        edited_df = st.data_editor(st.session_state.df_motores[col_lista], use_container_width=True, key="editor_v13")
         st.session_state.df_motores = edited_df
 
-        # --- 4. EXECUTAR CÁLCULOS ---
+        # --- 5. EXECUTAR CÁLCULOS ---
         st.divider()
         if st.button("🚀 EXECUTAR DIMENSIONAMENTO COMPLETO", type="secondary", use_container_width=True):
-            total_cv = (st.session_state.df_motores['Motor (CV)'] * st.session_state.df_motores['Quantidade']).sum()
-            in_total = (total_cv * 736) / (v_sec * 1.732 * 0.85 * 0.9)
             icc_qgbt = v_sec / (1.732 * ((z_pct/100)*((v_sec**2)/(p_trafo*1000))))
             
             res_ccm = []
@@ -102,33 +91,38 @@ def main():
                     "Painel": f"CCM {i}",
                     "Carga (CV)": f"{cv_ccm:.1f}",
                     "Cabo": f"{cabo} mm²",
-                    "Icc Local (kA)": round((icc_qgbt * 0.85)/1000, 2)
+                    "Icc Local (kA)": round((icc_qgbt * 0.85)/1000, 4)
                 })
             
-            st.session_state.res_calc = res_ccm
+            # SALVA OS RESULTADOS NO SESSION STATE PARA O SELETOR ABAIXO
+            st.session_state.resultados_finais = res_ccm
             st.subheader("📊 Resultados")
             st.table(pd.DataFrame(res_ccm))
 
-    # --- 5. EXPORTAÇÃO SUPABASE ---
-    if 'res_calc' in st.session_state:
+    # --- 6. EXPORTAÇÃO SUPABASE ---
+    if 'resultados_finais' in st.session_state:
         st.divider()
         st.subheader("📤 Exportar para Energia Incidente")
         c_sel, c_btn = st.columns([3, 1])
+        
         with c_sel:
-            opcao = st.selectbox("Selecione o Painel para enviar:", [r["Painel"] for r in st.session_state.res_calc])
+            # Puxa os nomes dos painéis que estão na tabela de resultados acima
+            opcoes_painel = [r["Painel"] for r in st.session_state.resultados_finais]
+            opcao = st.selectbox("Selecione o Painel para enviar:", options=opcoes_painel)
+        
         with c_btn:
+            st.write("") # Alinhamento
             if st.button("💾 Salvar no Supabase", use_container_width=True):
-                dados = next(item for item in st.session_state.res_calc if item["Painel"] == opcao)
+                dados = next(item for item in st.session_state.resultados_finais if item["Painel"] == opcao)
                 try:
-                    # Tenta inserir na tabela 'calculos_curto'
                     supabase.table("calculos_curto").insert({
                         "tag_painel": dados["Painel"],
                         "icc_ka": float(dados["Icc Local (kA)"]),
                         "v_sec": float(v_sec)
                     }).execute()
-                    st.toast(f"✅ {opcao} registrado com sucesso!", icon='🚀')
+                    st.toast(f"✅ {opcao} enviado com sucesso!", icon='🚀')
                 except Exception as e:
-                    st.error(f"Erro ao salvar: {e}. Verifique se a tabela 'calculos_curto' existe no Supabase.")
+                    st.error(f"Erro ao salvar: {e}")
 
 if __name__ == "__main__":
     main()
