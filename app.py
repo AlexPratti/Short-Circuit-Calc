@@ -27,7 +27,6 @@ def main():
     with st.container(border=True):
         c1, c2, c3, c4 = st.columns(4)
         with c1:
-            # Opção de 'None' ou 0.0 para garantir que o usuário escolha
             pot_input = st.selectbox("Potência (CV)", options=[0.25, 0.5, 1, 2, 3, 5, 7.5, 10, 15, 20, 25, 30, 40, 50, 75, 100], index=None, placeholder="Selecione...")
         with c2:
             qtd_input = st.number_input("Quantidade", min_value=1, value=1)
@@ -38,7 +37,6 @@ def main():
 
         if st.button("➕ Adicionar Motor à Lista", type="primary", use_container_width=True):
             if pot_input is not None:
-                # Reseta o status das linhas antigas e marca a nova
                 if not st.session_state.df_motores.empty:
                     st.session_state.df_motores['Status'] = 'Antigo'
                 
@@ -48,31 +46,29 @@ def main():
                     'Quantidade': qtd_input, 
                     'Partida': partida_input, 
                     'CCM Destino': ccm_input,
-                    'Status': 'Recém Adicionado'
+                    'Status': 'Novo'
                 }])
                 st.session_state.df_motores = pd.concat([st.session_state.df_motores, nova_linha], ignore_index=True)
                 st.rerun()
             else:
-                st.warning("Por favor, selecione a Potência do motor.")
+                st.warning("Selecione a Potência antes de adicionar.")
 
     # --- 5. TABELA DE GESTÃO ---
-    st.header("🏭 Lista de Motores Adicionados")
-    
     if not st.session_state.df_motores.empty:
-        col_excluir, col_limpar = st.columns([1, 1])
-        with col_excluir:
+        st.header("🏭 Motores na Lista")
+        
+        col_exc, col_lim = st.columns([1, 4])
+        with col_exc:
             if st.button("🗑️ Excluir Selecionados"):
                 st.session_state.df_motores = st.session_state.df_motores[st.session_state.df_motores['Selecionar'] == False]
                 st.rerun()
-        with col_limpar:
-            if st.button("💣 Limpar Lista Completa"):
+        with col_lim:
+            if st.button("💣 Limpar Tudo"):
                 st.session_state.df_motores = pd.DataFrame(columns=['Selecionar', 'Potência (CV)', 'Quantidade', 'Partida', 'CCM Destino', 'Status'])
                 st.rerun()
 
-        # Função de cor para identificar o que acabou de ser adicionado
         def highlight_new(row):
-            color = '#d1e7dd' if row['Status'] == 'Recém Adicionado' else '' # Verde claro para novos
-            return [f'background-color: {color}'] * len(row)
+            return ['background-color: #d1e7dd' if row['Status'] == 'Novo' else '' for _ in row]
 
         df_styled = st.session_state.df_motores.style.apply(highlight_new, axis=1)
 
@@ -80,33 +76,39 @@ def main():
             df_styled,
             column_config={
                 "Selecionar": st.column_config.CheckboxColumn("Excluir?", default=False),
-                "Status": None, # Oculta a coluna de controle
-                "CCM Destino": st.column_config.NumberColumn(disabled=True),
+                "Status": None,
                 "Potência (CV)": st.column_config.NumberColumn(disabled=True),
+                "CCM Destino": st.column_config.NumberColumn(disabled=True),
                 "Quantidade": st.column_config.NumberColumn(disabled=True),
                 "Partida": st.column_config.TextColumn(disabled=True),
             },
             use_container_width=True,
-            key="tabela_motores"
+            key="editor_final"
         )
-        # Sincroniza apenas o checkbox de exclusão
         st.session_state.df_motores['Selecionar'] = edited_df['Selecionar']
 
-    # --- 6. CÁLCULOS E RESULTADOS (IGUAL AO ANTERIOR) ---
-    st.divider()
-    if st.button("🏁 EXECUTAR CÁLCULOS FINAIS", use_container_width=True):
-        if st.session_state.df_motores.empty:
-            st.error("A lista está vazia!")
-        else:
-            # (Lógica de cálculo mantida)
+        # --- 6. CÁLCULOS ---
+        st.divider()
+        if st.button("🏁 EXECUTAR CÁLCULOS", use_container_width=True):
             z_base = (v_sec**2) / (p_trafo * 1000)
             z_t = (z_pct/100) * z_base
             z_r = 0 if scc_rede == 0 else (v_sec**2) / (scc_rede * 1e6)
             icc_trafo = (v_sec / (np.sqrt(3) * (z_r + z_t)))
+            
             motores_cc = st.session_state.df_motores[st.session_state.df_motores['Partida'].isin(["Direta", "Estrela-Triângulo"])]
             total_cv_cc = (motores_cc['Potência (CV)'] * motores_cc['Quantidade']).sum()
             icc_motores = (total_cv_cc * 1.55) * 4
             icc_qgbt = icc_trafo + icc_motores
 
-            st.success(f"### Corrente de Curto-Circuito no QGBT: {icc_qgbt/1000:.2f} kA")
-            # ... (Restante da tabela de resultados por CCM)
+            st.success(f"### Icc Total no QGBT: {icc_qgbt/1000:.2f} kA")
+
+            res_data = []
+            for i in range(1, int(n_ccm) + 1):
+                mask = st.session_state.df_motores['CCM Destino'] == i
+                cv_ccm = (st.session_state.df_motores[mask]['Potência (CV)'] * st.session_state.df_motores[mask]['Quantidade']).sum()
+                icc_local = (v_sec / (np.sqrt(3) * ((v_sec/(icc_qgbt*np.sqrt(3))) + (0.0003 * 20)))) # Distância fixa 20m para exemplo
+                res_data.append({"Painel": f"CCM {i}", "Carga (CV)": f"{cv_ccm:.1f}", "Icc (kA)": f"{icc_local/1000:.2f}"})
+            st.table(pd.DataFrame(res_data))
+
+if __name__ == "__main__":
+    main()
