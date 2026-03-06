@@ -42,7 +42,7 @@ def main():
 
         # --- HIPERLINK COM OUTROS APPs
         st.title("Outros Cálculos")
-        st.link_button("Energia Incidente", "https://short-circuit-calc-e5u5dmgap2uqfdtbkc3d4e.streamlit.app/", use_container_width=True)
+        st.link_button("Energia Incidente", "https://calculo-arc-flash-hb8eujmejx23kk2skfn9nr.streamlit.app/", use_container_width=True)
         st.link_button("Banco de Capacitores", "https://c-lculobancocapacitores-tne9epqsrh64gtwaakzyax.streamlit.app/", use_container_width=True)
 
     # --- 3. CONFIGURAÇÃO DE CCMs ---
