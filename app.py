@@ -3,11 +3,9 @@ import pandas as pd
 import numpy as np
 from supabase import create_client, Client
 
-# --- HIPERLINK COM OUTROS APPs
-with st.sidebar:
-    st.title("Outros Cálculos")
-    st.link_button("Energia Incidente", "https://short-circuit-calc-e5u5dmgap2uqfdtbkc3d4e.streamlit.app/", use_container_width=True)
-    st.link_button("Banco de Capacitores", "https://c-lculobancocapacitores-tne9epqsrh64gtwaakzyax.streamlit.app/", use_container_width=True)
+
+
+    
 
 
 # --- 1. CONEXÃO COM O BANCO DE DADOS (SUPABASE) ---
@@ -41,6 +39,11 @@ def main():
         v_sec = st.number_input("Tensão (V)", value=380.0)
         z_pct = st.number_input("Impedância Z% (Trafo)", value=5.0)
         dist_se_qgbt = st.number_input("Distância SE ao QGBT (m)", value=15.0)
+
+        # --- HIPERLINK COM OUTROS APPs
+        st.title("Outros Cálculos")
+        st.link_button("Energia Incidente", "https://short-circuit-calc-e5u5dmgap2uqfdtbkc3d4e.streamlit.app/", use_container_width=True)
+        st.link_button("Banco de Capacitores", "https://c-lculobancocapacitores-tne9epqsrh64gtwaakzyax.streamlit.app/", use_container_width=True)
 
     # --- 3. CONFIGURAÇÃO DE CCMs ---
     n_ccm = st.number_input("Quantidade de CCMs", min_value=1, value=2)
