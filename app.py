@@ -3,6 +3,13 @@ import pandas as pd
 import numpy as np
 from supabase import create_client, Client
 
+# --- HIPERLINK COM OUTROS APPs
+with st.sidebar:
+    st.title("Outros Cálculos")
+    st.link_button("Energia Incidente", "https://short-circuit-calc-e5u5dmgap2uqfdtbkc3d4e.streamlit.app/", use_container_width=True)
+    st.link_button("Banco de Capacitores", "https://c-lculobancocapacitores-tne9epqsrh64gtwaakzyax.streamlit.app/", use_container_width=True)
+
+
 # --- 1. CONEXÃO COM O BANCO DE DADOS (SUPABASE) ---
 URL_SUPABASE = "https://lfgqxphittdatzknwkqw.supabase.co" 
 KEY_SUPABASE = "sb_publishable_zLiarara0IVVcwQm6oR2IQ_Sb0YOWTe" 
