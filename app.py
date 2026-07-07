@@ -38,14 +38,15 @@ if "cliente_dados" not in st.session_state:
 def buscar_categorias():
     try:
         res = supabase.table("app_servicos_detalhes").select("categoria").execute()
-        if res.data:
-            return list(set([item['categoria'] for item in res.data]))
+        # Garante que existem dados reais antes de processar
+        if res.data and len(res.data) > 0:
+            return list(set([item['categoria'] for item in res.data if 'categoria' in item]))
     except Exception as e:
-        # Se a tabela não existir ou der erro de privilégio, exibe o aviso mas não trava
-        st.sidebar.warning("⚠️ Tabelas não detectadas no Supabase. Usando dados locais temporários.")
+        st.sidebar.warning("⚠️ Aguardando dados ou tabelas no Supabase.")
     
-    # Retorno padrão de contingência caso o banco falhe
+    # Retorno padrão de contingência para o app não quebrar vazio
     return ["Elétrica", "Hidráulica", "Pintura"]
+
 
 def buscar_servicos_por_categoria(cat):
     try:
@@ -133,19 +134,21 @@ elif menu == "Gerenciar Serviços/Preços":
                 st.success(f"Botão/Serviço '{nova_cat}' atualizado com sucesso!")
                 st.rerun()
             except Exception as error_db:
-                st.error(f"Erro ao salvar no banco: {error_db}. Verifique se a tabela existe.")
+                st.error(f"Erro ao salvar no banco: {error_db}.")
             
     st.subheader("Tabela de Preços Cadastrados")
-    # --- CORREÇÃO DA LINHA 107 COM TRATAMENTO DE ERROS ---
+    
     try:
-        res = supabase.table("app_servicos_detalhes").select("*").execute()
-        if res.data:
+        # Mudança crucial: especificando as colunas exatas em vez de usar '*'
+        res = supabase.table("app_servicos_detalhes").select("categoria, nome_detalhado, preco").execute()
+        if res.data and len(res.data) > 0:
             st.dataframe(res.data, use_container_width=True)
         else:
-            st.info("Nenhum preço cadastrado no banco de dados.")
+            st.info("Nenhum preço cadastrado no banco de dados ainda. Use o formulário acima para cadastrar o primeiro!")
     except Exception as e:
-        st.error("⚠️ Não foi possível carregar a tabela física do Supabase.")
-        st.info("Motivo: A tabela 'app_servicos_detalhes' não foi encontrada com as credenciais atuais. O app usará dados em memória.")
+        st.error("⚠️ Erro crítico na leitura dos campos do banco:")
+        # Isso vai expor a linha exata do erro do driver se houver incompatibilidade de colunas
+        st.exception(e) 
 
 elif menu == "Cadastrar Profissional":
     st.title("👨‍🔧 Cadastrar Novo Profissional")
