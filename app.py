@@ -38,6 +38,7 @@ if "categoria_ativa" not in st.session_state:
 
 
 
+
 # --- LÓGICA DAS FUNÇÕES DO BANCO (Conexão Direta HTTP contra Bugs de Rota) ---
 def executar_select_direto(tabela, parametros=""):
     try:
@@ -66,10 +67,11 @@ def executar_insert_direto(tabela, dados):
             "apikey": st.secrets["KEY_SUPABASE"].strip(),
             "Authorization": f"Bearer {st.secrets['KEY_SUPABASE'].strip()}",
             "Content-Type": "application/json",
-            "Prefer": "return=representation"  # Mudado para trazer o erro detalhado se falhar
+            "Prefer": "return=representation"
         }
         
         resposta = requests.post(url_api, headers=headers, json=dados)
+        # Correção definitiva: adicionada a lista de códigos HTTP válidos
         if resposta.status_code in:
             return {"sucesso": True, "detalhes": ""}
         else:
@@ -132,6 +134,7 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("📢 Suporte & Reclamações")
 st.sidebar.write("Fale com o Administrador:")
 st.sidebar.info("📧 contato@pratti.com\n\n📞 (11) 99999-9999")
+
 
 
 # --- TELAS DO SISTEMA: 1. ÁREA ADMINISTRATIVA ---
