@@ -1,5 +1,6 @@
 import streamlit as st
 import datetime
+import json
 from supabase import create_client, Client
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
@@ -9,21 +10,17 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- CONEXÃO COM O SUPABASE ---
-# Adicione esta linha temporariamente para forçar o Streamlit a apagar a memória antiga:
-st.cache_resource.clear()
-
+# --- CONEXÃO COM O SUPABASE (Limpeza estrita de strings contra falhas de rota) ---
 @st.cache_resource
 def init_supabase() -> Client:
-    url = st.secrets["URL_SUPABASE"]
-    key = st.secrets["KEY_SUPABASE"]
+    url = st.secrets["URL_SUPABASE"].strip().rstrip('/')
+    key = st.secrets["KEY_SUPABASE"].strip()
     return create_client(url, key)
 
 try:
     supabase = init_supabase()
 except Exception as e:
     st.error(f"Erro técnico na conexão: {e}")
-    st.info("Verifique se as chaves no Secrets estão idênticas ao seu arquivo toml.")
     st.stop()
 
 # --- CONTROLE DE SESSÃO (STATE) ---
@@ -33,30 +30,29 @@ if "user_type" not in st.session_state:
     st.session_state["user_type"] = None  # 'admin' ou 'cliente'
 if "cliente_dados" not in st.session_state:
     st.session_state["cliente_dados"] = None
-    
-# --- LÓGICA DAS FUNÇÕES DO BANCO (Com proteção anticaída) ---
+if "categoria_ativa" not in st.session_state:
+    st.session_state["categoria_ativa"] = None
+
+# --- LÓGICA DAS FUNÇÕES DO BANCO (Tratamento robusto e colunas explícitas) ---
 def buscar_categorias():
     try:
         res = supabase.table("app_servicos_detalhes").select("categoria").execute()
-        # Garante que existem dados reais antes de processar
-        if res.data and len(res.data) > 0:
-            return list(set([item['categoria'] for item in res.data if 'categoria' in item]))
-    except Exception as e:
-        st.sidebar.warning("⚠️ Aguardando dados ou tabelas no Supabase.")
-    
-    # Retorno padrão de contingência para o app não quebrar vazio
+        if hasattr(res, 'data') and res.data:
+            categorias = list(set([item['categoria'] for item in res.data if 'categoria' in item]))
+            if categorias:
+                return categorias
+    except Exception:
+        pass
     return ["Elétrica", "Hidráulica", "Pintura"]
-
 
 def buscar_servicos_por_categoria(cat):
     try:
-        res = supabase.table("app_servicos_detalhes").select("*").eq("categoria", cat).execute()
-        if res.data:
+        res = supabase.table("app_servicos_detalhes").select("categoria, nome_detalhado, preco").eq("categoria", cat).execute()
+        if hasattr(res, 'data') and res.data:
             return res.data
     except Exception:
         pass
     
-    # Dados fictícios locais para o app funcionar mesmo se o banco falhar
     dados_locais = {
         "Elétrica": [{"nome_detalhado": "Instalação de chuveiro elétrico 220 V", "preco": 150.00}],
         "Hidráulica": [{"nome_detalhado": "Conserto de vazamento em torneira", "preco": 80.00}],
@@ -76,7 +72,6 @@ def registrar_ligacao(cliente, profissional, atendeu):
     except Exception:
         st.info(f"📌 [Modo Local] Ligação para {profissional} registrada na tela.")
 
-    
 # --- MENU LATERAL (NAVEGAÇÃO) ---
 st.sidebar.title("🛠️ Central de Serviços")
 
@@ -94,6 +89,7 @@ else:
         st.session_state["user_logged"] = False
         st.session_state["user_type"] = None
         st.session_state["cliente_dados"] = None
+        st.session_state["categoria_ativa"] = None
         st.rerun()
 
 st.sidebar.markdown("---")
@@ -108,7 +104,7 @@ if menu == "Área Administrativa" and not st.session_state["user_logged"]:
     login_pass = st.text_input("Senha", type="password")
     
     if st.button("Acessar"):
-        if login_user.strip().upper() == st.secrets["ADMIN_USER"] and login_pass == st.secrets["ADMIN_PASS"]:
+        if login_user.strip().upper() == st.secrets["ADMIN_USER"].strip().upper() and login_pass == st.secrets["ADMIN_PASS"]:
             st.session_state["user_logged"] = True
             st.session_state["user_type"] = "admin"
             st.success("Login administrativo realizado com sucesso!")
@@ -139,16 +135,21 @@ elif menu == "Gerenciar Serviços/Preços":
     st.subheader("Tabela de Preços Cadastrados")
     
     try:
-        # Mudança crucial: especificando as colunas exatas em vez de usar '*'
-        res = supabase.table("app_servicos_detalhes").select("categoria, nome_detalhado, preco").execute()
-        if res.data and len(res.data) > 0:
-            st.dataframe(res.data, use_container_width=True)
+        resposta = supabase.table("app_servicos_detalhes").select("categoria, nome_detalhado, preco").execute()
+        if hasattr(resposta, 'data') and resposta.data:
+            st.dataframe(resposta.data, use_container_width=True)
         else:
-            st.info("Nenhum preço cadastrado no banco de dados ainda. Use o formulário acima para cadastrar o primeiro!")
+            st.info("Nenhum preço cadastrado no banco de dados ainda.")
     except Exception as e:
-        st.error("⚠️ Erro crítico na leitura dos campos do banco:")
-        # Isso vai expor a linha exata do erro do driver se houver incompatibilidade de colunas
-        st.exception(e) 
+        st.error("⚠️ Incompatibilidade na leitura direta de dados. Tentando conversão estruturada:")
+        try:
+            dados_brutos = resposta.__dict__.get('_data', []) if 'resposta' in locals() else []
+            if dados_brutos:
+                st.dataframe(dados_brutos, use_container_width=True)
+            else:
+                st.code(str(e))
+        except:
+            st.code(str(e))
 
 elif menu == "Cadastrar Profissional":
     st.title("👨‍🔧 Cadastrar Novo Profissional")
@@ -174,8 +175,8 @@ elif menu == "Cadastrar Profissional":
 elif menu == "Ver Logs de Ligações":
     st.title("📊 Histórico de Ligações Registradas")
     try:
-        res = supabase.table("app_servicos_logs_ligacoes").select("*").order("horario", desc=True).execute()
-        if res.data:
+        res = supabase.table("app_servicos_logs_ligacoes").select("cliente_nome, profissional_nome, horario, atendido").order("horario", desc=True).execute()
+        if hasattr(res, 'data') and res.data:
             st.dataframe(res.data, use_container_width=True)
         else:
             st.info("Nenhuma ligação registrada até o momento.")
@@ -190,16 +191,18 @@ elif menu == "Área do Cliente" and not st.session_state["user_logged"]:
     with aba_login:
         tel_login = st.text_input("Digite seu Telefone WhatsApp Cadastrado", key="login_tel")
         if st.button("Entrar"):
-            res = supabase.table("app_servicos_clientes").select("*").eq("whatsapp", tel_login).execute()
-            # Correção: Verificar se a lista retornada não está vazia e pegar o primeiro elemento [0]
-            if res.data and len(res.data) > 0:
-                st.session_state["user_logged"] = True
-                st.session_state["user_type"] = "cliente"
-                st.session_state["cliente_dados"] = res.data[0]  # Acessa o primeiro item da lista
-                st.success(f"Bem-vindo de volta, {st.session_state['cliente_dados']['nome_completo']}!")
-                st.rerun()
-            else:
-                st.error("Telefone não encontrado. Cadastre-se na aba ao lado.")
+            try:
+                res = supabase.table("app_servicos_clientes").select("nome_completo, endereco, whatsapp").eq("whatsapp", tel_login).execute()
+                if hasattr(res, 'data') and res.data and len(res.data) > 0:
+                    st.session_state["user_logged"] = True
+                    st.session_state["user_type"] = "cliente"
+                    st.session_state["cliente_dados"] = res.data[0]
+                    st.success(f"Bem-vindo de volta, {st.session_state['cliente_dados']['nome_completo']}!")
+                    st.rerun()
+                else:
+                    st.error("Telefone não encontrado. Cadastre-se na aba ao lado.")
+            except Exception as e:
+                st.error(f"Erro ao buscar cliente: {e}")
                 
     with aba_cadastro:
         nome_c = st.text_input("Nome Completo")
@@ -208,13 +211,16 @@ elif menu == "Área do Cliente" and not st.session_state["user_logged"]:
         
         if st.button("Concluir Cadastro"):
             if nome_c and endereco_c and whats_c:
-                res_check = supabase.table("app_servicos_clientes").select("*").eq("whatsapp", whats_c).execute()
-                if res_check.data and len(res_check.data) > 0:
-                    st.warning("Este telefone já está cadastrado.")
-                else:
-                    novo_cli = {"nome_completo": nome_c, "endereco": endereco_c, "whatsapp": whats_c}
-                    supabase.table("app_servicos_clientes").insert(novo_cli).execute()
-                    st.success("Cadastro efetuado! Faça o login na aba ao lado.")
+                try:
+                    res_check = supabase.table("app_servicos_clientes").select("whatsapp").eq("whatsapp", whats_c).execute()
+                    if hasattr(res_check, 'data') and res_check.data and len(res_check.data) > 0:
+                        st.warning("Este telefone já está cadastrado.")
+                    else:
+                        novo_cli = {"nome_completo": nome_c, "endereco": endereco_c, "whatsapp": whats_c}
+                        supabase.table("app_servicos_clientes").insert(novo_cli).execute()
+                        st.success("Cadastro efetuado! Faça o login na aba ao lado.")
+                except Exception as e:
+                    st.error(f"Erro no cadastro: {e}")
 
 # --- TELAS DO SISTEMA: 3. PAINEL DO CLIENTE LOGADO (BUSCA DINÂMICA) ---
 elif menu == "Buscar Serviços":
@@ -227,13 +233,13 @@ elif menu == "Buscar Serviços":
         if colunas[idx].button(f"🔹 {cat}", use_container_width=True):
             st.session_state["categoria_ativa"] = cat
 
-    if "categoria_ativa" in st.session_state:
+    if st.session_state["categoria_ativa"]:
         cat_ativa = st.session_state["categoria_ativa"]
         st.markdown(f"### 🛠️ Serviços disponíveis para: **{cat_ativa}**")
         servicos_detalhados = buscar_servicos_por_categoria(cat_ativa)
         
         if servicos_detalhados:
-            col_esq, col_dir = st.columns()
+            col_esq, col_dir = st.columns(2)
             with col_esq:
                 st.markdown("**Tabela de Preços Oficiais:**")
                 for s in servicos_detalhados:
@@ -252,19 +258,19 @@ elif menu == "Buscar Serviços":
         ]
         
         try:
-            res_prof = supabase.table("app_servicos_profissionais").select("*").eq("servico_principal", cat_ativa).execute()
-            lista_prof = res_prof.data if res_prof.data else profissionais_falsos
+            res_prof = supabase.table("app_servicos_profissionais").select("nome, localidade, telefone").eq("servico_principal", cat_ativa).execute()
+            lista_prof = res_prof.data if hasattr(res_prof, 'data') and res_prof.data else profissionais_falsos
         except Exception:
             lista_prof = profissionais_falsos
         
-        for prof_item in lista_prof:
+        for idx_p, prof_item in enumerate(lista_prof):
             with st.container(border=True):
                 st.write(f"**Nome:** {prof_item['nome']}")
                 st.write(f"📍 **Localidade:** {prof_item['localidade']}")
                 st.write("Para falar com o profissional, use os botões abaixo:")
                 c1, c2 = st.columns(2)
                 
-                if c1.button(f"📞 Ligar para {prof_item['nome']}", key=f"ligar_{prof_item['id']}"):
+                if c1.button(f"📞 Ligar para {prof_item['nome']}", key=f"ligar_{idx_p}"):
                     registrar_ligacao(
                         cliente=st.session_state["cliente_dados"]["nome_completo"],
                         profissional=prof_item["nome"],
@@ -272,7 +278,7 @@ elif menu == "Buscar Serviços":
                     )
                     st.success(f"Ligação registrada! Contato: {prof_item['telefone']}")
                     
-                if c2.button(f"❌ Chamei mas não atendeu", key=f"nao_atendeu_{prof_item['id']}"):
+                if c2.button(f"❌ Chamei mas não atendeu", key=f"nao_atendeu_{idx_p}"):
                     registrar_ligacao(
                         cliente=st.session_state["cliente_dados"]["nome_completo"],
                         profissional=prof_item["nome"],
