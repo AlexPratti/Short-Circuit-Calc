@@ -37,6 +37,8 @@ if "categoria_ativa" not in st.session_state:
 
 
 
+
+
 # --- LÓGICA DAS FUNÇÕES DO BANCO (Conexão Direta HTTP contra Bugs de Rota) ---
 def executar_select_direto(tabela, parametros=""):
     try:
@@ -65,11 +67,12 @@ def executar_insert_direto(tabela, dados):
             "apikey": st.secrets["KEY_SUPABASE"].strip(),
             "Authorization": f"Bearer {st.secrets['KEY_SUPABASE'].strip()}",
             "Content-Type": "application/json",
-            "Prefer": "return=minimal"  # Configuração padrão do Supabase para inserção simples
+            "Prefer": "return=minimal"
         }
         
         resposta = requests.post(url_api, headers=headers, json=dados)
-        if resposta.status_code in:
+        # Correção da sintaxe: verifica se o banco aceitou a gravação (200, 201 ou 204)
+        if resposta.status_code in [200, 201, 204]:
             return True
     except Exception:
         pass
@@ -130,6 +133,7 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("📢 Suporte & Reclamações")
 st.sidebar.write("Fale com o Administrador:")
 st.sidebar.info("📧 contato@pratti.com\n\n📞 (11) 99999-9999")
+
 
 # --- TELAS DO SISTEMA: 1. ÁREA ADMINISTRATIVA ---
 if menu == "Área Administrativa" and not st.session_state["user_logged"]:
