@@ -10,6 +10,9 @@ st.set_page_config(
 )
 
 # --- CONEXÃO COM O SUPABASE ---
+# Adicione esta linha temporariamente para forçar o Streamlit a apagar a memória antiga:
+st.cache_resource.clear()
+
 @st.cache_resource
 def init_supabase() -> Client:
     url = st.secrets["URL_SUPABASE"]
