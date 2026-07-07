@@ -1,6 +1,7 @@
 import streamlit as st
 import datetime
 import json
+import requests
 from supabase import create_client, Client
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
@@ -33,25 +34,39 @@ if "cliente_dados" not in st.session_state:
 if "categoria_ativa" not in st.session_state:
     st.session_state["categoria_ativa"] = None
 
-# --- LÓGICA DAS FUNÇÕES DO BANCO (Tratamento robusto e colunas explícitas) ---
-def buscar_categorias():
+
+# --- LÓGICA DAS FUNÇÕES DO BANCO (Consulta via HTTP Direto para evitar Erro 404 do Driver) ---
+def executar_select_direto(tabela, parametros=""):
     try:
-        res = supabase.table("app_servicos_detalhes").select("categoria").execute()
-        if hasattr(res, 'data') and res.data:
-            categorias = list(set([item['categoria'] for item in res.data if 'categoria' in item]))
-            if categorias:
-                return categorias
+        url_base = st.secrets["URL_SUPABASE"].strip().rstrip('/')
+        # Monta a URL oficial da API PostgREST do seu projeto Supabase
+        url_api = f"{url_base}/rest/v1/{tabela}{parametros}"
+        
+        headers = {
+            "apikey": st.secrets["KEY_SUPABASE"].strip(),
+            "Authorization": f"Bearer {st.secrets['KEY_SUPABASE'].strip()}",
+            "Content-Type": "application/json"
+        }
+        
+        resposta = requests.get(url_api, headers=headers)
+        if resposta.status_code == 200:
+            return resposta.json()
     except Exception:
         pass
+    return None
+
+def buscar_categorias():
+    dados = executar_select_direto("app_servicos_detalhes", "?select=categoria")
+    if dados:
+        categorias = list(set([item['categoria'] for item in dados if 'categoria' in item]))
+        if categorias:
+            return categorias
     return ["Elétrica", "Hidráulica", "Pintura"]
 
 def buscar_servicos_por_categoria(cat):
-    try:
-        res = supabase.table("app_servicos_detalhes").select("categoria, nome_detalhado, preco").eq("categoria", cat).execute()
-        if hasattr(res, 'data') and res.data:
-            return res.data
-    except Exception:
-        pass
+    dados = executar_select_direto("app_servicos_detalhes", f"?select=categoria,nome_detalhado,preco&categoria=eq.{cat}")
+    if dados:
+        return dados
     
     dados_locais = {
         "Elétrica": [{"nome_detalhado": "Instalação de chuveiro elétrico 220 V", "preco": 150.00}],
@@ -60,17 +75,17 @@ def buscar_servicos_por_categoria(cat):
     }
     return dados_locais.get(cat, [])
 
-def registrar_ligacao(cliente, profissional, atendeu):
+def registrar_ligacao(cliente, profesional, atendeu):
     dados = {
         "cliente_nome": cliente,
-        "profissional_nome": profissional,
+        "profissional_nome": profesional,
         "horario": datetime.datetime.now().isoformat(),
         "atendido": atendeu
     }
     try:
         supabase.table("app_servicos_logs_ligacoes").insert(dados).execute()
     except Exception:
-        st.info(f"📌 [Modo Local] Ligação para {profissional} registrada na tela.")
+        st.info(f"📌 [Modo Local] Ligação para {profisional} registrada na tela.")
 
 # --- MENU LATERAL (NAVEGAÇÃO) ---
 st.sidebar.title("🛠️ Central de Serviços")
@@ -96,6 +111,7 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("📢 Suporte & Reclamações")
 st.sidebar.write("Fale com o Administrador:")
 st.sidebar.info("📧 contato@pratti.com\n\n📞 (11) 99999-9999")
+
 
 # --- TELAS DO SISTEMA: 1. ÁREA ADMINISTRATIVA ---
 if menu == "Área Administrativa" and not st.session_state["user_logged"]:
@@ -134,22 +150,13 @@ elif menu == "Gerenciar Serviços/Preços":
             
     st.subheader("Tabela de Preços Cadastrados")
     
-    try:
-        resposta = supabase.table("app_servicos_detalhes").select("categoria, nome_detalhado, preco").execute()
-        if hasattr(resposta, 'data') and resposta.data:
-            st.dataframe(resposta.data, use_container_width=True)
-        else:
-            st.info("Nenhum preço cadastrado no banco de dados ainda.")
-    except Exception as e:
-        st.error("⚠️ Incompatibilidade na leitura direta de dados. Tentando conversão estruturada:")
-        try:
-            dados_brutos = resposta.__dict__.get('_data', []) if 'resposta' in locals() else []
-            if dados_brutos:
-                st.dataframe(dados_brutos, use_container_width=True)
-            else:
-                st.code(str(e))
-        except:
-            st.code(str(e))
+    # Executa a busca direta via API bypassando o erro 404 do pacote python
+    dados_tabela = executar_select_direto("app_servicos_detalhes", "?select=categoria,nome_detalhado,preco")
+    
+    if dados_tabela:
+        st.dataframe(dados_tabela, use_container_width=True)
+    else:
+        st.info("Nenhum preço cadastrado no banco de dados ainda. Cadastre o primeiro item no formulário acima!")
 
 elif menu == "Cadastrar Profissional":
     st.title("👨‍🔧 Cadastrar Novo Profissional")
@@ -174,14 +181,11 @@ elif menu == "Cadastrar Profissional":
 
 elif menu == "Ver Logs de Ligações":
     st.title("📊 Histórico de Ligações Registradas")
-    try:
-        res = supabase.table("app_servicos_logs_ligacoes").select("cliente_nome, profissional_nome, horario, atendido").order("horario", desc=True).execute()
-        if hasattr(res, 'data') and res.data:
-            st.dataframe(res.data, use_container_width=True)
-        else:
-            st.info("Nenhuma ligação registrada até o momento.")
-    except Exception:
-        st.warning("Histórico indisponível sem as tabelas do Supabase prontas.")
+    dados_logs = executar_select_direto("app_servicos_logs_ligacoes", "?select=cliente_nome,profissional_nome,horario,atendido&order=horario.desc")
+    if dados_logs:
+        st.dataframe(dados_logs, use_container_width=True)
+    else:
+        st.info("Nenhuma ligação registrada até o momento ou tabelas indisponíveis.")
 
 # --- TELAS DO SISTEMA: 2. ÁREA DO CLIENTE (LOGIN/CADASTRO) ---
 elif menu == "Área do Cliente" and not st.session_state["user_logged"]:
@@ -191,18 +195,15 @@ elif menu == "Área do Cliente" and not st.session_state["user_logged"]:
     with aba_login:
         tel_login = st.text_input("Digite seu Telefone WhatsApp Cadastrado", key="login_tel")
         if st.button("Entrar"):
-            try:
-                res = supabase.table("app_servicos_clientes").select("nome_completo, endereco, whatsapp").eq("whatsapp", tel_login).execute()
-                if hasattr(res, 'data') and res.data and len(res.data) > 0:
-                    st.session_state["user_logged"] = True
-                    st.session_state["user_type"] = "cliente"
-                    st.session_state["cliente_dados"] = res.data[0]
-                    st.success(f"Bem-vindo de volta, {st.session_state['cliente_dados']['nome_completo']}!")
-                    st.rerun()
-                else:
-                    st.error("Telefone não encontrado. Cadastre-se na aba ao lado.")
-            except Exception as e:
-                st.error(f"Erro ao buscar cliente: {e}")
+            dados_cli = executar_select_direto("app_servicos_clientes", f"?select=nome_completo,endereco,whatsapp&whatsapp=eq.{tel_login}")
+            if dados_cli and len(dados_cli) > 0:
+                st.session_state["user_logged"] = True
+                st.session_state["user_type"] = "cliente"
+                st.session_state["cliente_dados"] = dados_cli[0]
+                st.success(f"Bem-vindo de volta, {st.session_state['cliente_dados']['nome_completo']}!")
+                st.rerun()
+            else:
+                st.error("Telefone não encontrado. Cadastre-se na aba ao lado.")
                 
     with aba_cadastro:
         nome_c = st.text_input("Nome Completo")
@@ -212,8 +213,8 @@ elif menu == "Área do Cliente" and not st.session_state["user_logged"]:
         if st.button("Concluir Cadastro"):
             if nome_c and endereco_c and whats_c:
                 try:
-                    res_check = supabase.table("app_servicos_clientes").select("whatsapp").eq("whatsapp", whats_c).execute()
-                    if hasattr(res_check, 'data') and res_check.data and len(res_check.data) > 0:
+                    res_check = executar_select_direto("app_servicos_clientes", f"?select=whatsapp&whatsapp=eq.{whats_c}")
+                    if res_check and len(res_check) > 0:
                         st.warning("Este telefone já está cadastrado.")
                     else:
                         novo_cli = {"nome_completo": nome_c, "endereco": endereco_c, "whatsapp": whats_c}
@@ -257,10 +258,8 @@ elif menu == "Buscar Serviços":
             {"id": 1, "nome": "Carlos Silva", "localidade": "Centro", "telefone": "11999999999"}
         ]
         
-        try:
-            res_prof = supabase.table("app_servicos_profissionais").select("nome, localidade, telefone").eq("servico_principal", cat_ativa).execute()
-            lista_prof = res_prof.data if hasattr(res_prof, 'data') and res_prof.data else profissionais_falsos
-        except Exception:
+        lista_prof = executar_select_direto("app_servicos_profissionais", f"?select=nome,localidade,telefone&servico_principal=eq.{cat_ativa}")
+        if not lista_prof:
             lista_prof = profissionais_falsos
         
         for idx_p, prof_item in enumerate(lista_prof):
