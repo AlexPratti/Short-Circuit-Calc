@@ -12,7 +12,6 @@ st.set_page_config(
 # --- CONEXÃO COM O SUPABASE ---
 @st.cache_resource
 def init_supabase() -> Client:
-    # Utilizando exatamente as chaves do seu Secrets
     url = st.secrets["URL_SUPABASE"]
     key = st.secrets["KEY_SUPABASE"]
     return create_client(url, key)
@@ -20,8 +19,10 @@ def init_supabase() -> Client:
 try:
     supabase = init_supabase()
 except Exception as e:
-    st.error("Erro ao conectar ao Supabase. Verifique suas Secrets.")
+    st.error(f"Erro técnico na conexão: {e}")
+    st.info("Verifique se as chaves no Secrets estão idênticas ao seu arquivo toml.")
     st.stop()
+
 # --- CONTROLE DE SESSÃO (STATE) ---
 if "user_logged" not in st.session_state:
     st.session_state["user_logged"] = False
@@ -141,11 +142,12 @@ elif menu == "Área do Cliente" and not st.session_state["user_logged"]:
         tel_login = st.text_input("Digite seu Telefone WhatsApp Cadastrado", key="login_tel")
         if st.button("Entrar"):
             res = supabase.table("app_servicos_clientes").select("*").eq("whatsapp", tel_login).execute()
-            if res.data:
+            # Correção: Verificar se a lista retornada não está vazia e pegar o primeiro elemento [0]
+            if res.data and len(res.data) > 0:
                 st.session_state["user_logged"] = True
                 st.session_state["user_type"] = "cliente"
-                st.session_state["cliente_dados"] = res.data[0] # Pega o primeiro registro encontrado
-                st.success(f"Bem-vindo de volta, {res.data[0]['nome_completo']}!")
+                st.session_state["cliente_dados"] = res.data[0]  # Acessa o primeiro item da lista
+                st.success(f"Bem-vindo de volta, {st.session_state['cliente_dados']['nome_completo']}!")
                 st.rerun()
             else:
                 st.error("Telefone não encontrado. Cadastre-se na aba ao lado.")
@@ -158,12 +160,13 @@ elif menu == "Área do Cliente" and not st.session_state["user_logged"]:
         if st.button("Concluir Cadastro"):
             if nome_c and endereco_c and whats_c:
                 res_check = supabase.table("app_servicos_clientes").select("*").eq("whatsapp", whats_c).execute()
-                if res_check.data:
+                if res_check.data and len(res_check.data) > 0:
                     st.warning("Este telefone já está cadastrado.")
                 else:
                     novo_cli = {"nome_completo": nome_c, "endereco": endereco_c, "whatsapp": whats_c}
                     supabase.table("app_servicos_clientes").insert(novo_cli).execute()
                     st.success("Cadastro efetuado! Faça o login na aba ao lado.")
+
 # --- TELAS DO SISTEMA: 3. PAINEL DO CLIENTE LOGADO (BUSCA DINÂMICA) ---
 elif menu == "Buscar Serviços":
     st.title(f"Olá, {st.session_state['cliente_dados']['nome_completo']}! Do que precisa hoje?")
@@ -197,28 +200,28 @@ elif menu == "Buscar Serviços":
         res_prof = supabase.table("app_servicos_profissionais").select("*").eq("servico_principal", cat_ativa).execute()
         
         if res_prof.data:
-            for prof in res_prof.data:
+            for prof_item in res_prof.data:
                 with st.container(border=True):
-                    st.write(f"**Nome:** {prof['nome']}")
-                    st.write(f"📍 **Localidade:** {prof['localidade']}")
+                    st.write(f"**Nome:** {prof_item['nome']}")
+                    st.write(f"📍 **Localidade:** {prof_item['localidade']}")
                     st.write("Para falar com o profissional, use os botões abaixo:")
                     c1, c2 = st.columns(2)
                     
-                    if c1.button(f"📞 Ligar para {prof['nome']}", key=f"ligar_{prof['id']}"):
+                    if c1.button(f"📞 Ligar para {prof_item['nome']}", key=f"ligar_{prof_item['id']}"):
                         registrar_ligacao(
                             cliente=st.session_state["cliente_dados"]["nome_completo"],
-                            profissional=prof["nome"],
+                            profissional=prof_item["nome"],
                             atendido=True
                         )
-                        st.success(f"Ligação registrada com sucesso! Contato: {prof['telefone']}")
+                        st.success(f"Ligação registrada com sucesso! Contato: {prof_item['telefone']}")
                         
-                    if c2.button(f"❌ Chamei mas não atendeu", key=f"nao_atendeu_{prof['id']}"):
+                    if c2.button(f"❌ Chamei mas não atendeu", key=f"nao_atendeu_{prof_item['id']}"):
                         registrar_ligacao(
                             cliente=st.session_state["cliente_dados"]["nome_completo"],
-                            profissional=prof["nome"],
+                            profissional=prof_item["nome"],
                             atendido=False
                         )
-                        st.warning(f"Tentativa de contato sem sucesso registrada para {prof['nome']}.")
+                        st.warning(f"Tentativa de contato sem sucesso registrada para {prof_item['nome']}.")
         else:
             st.warning("Nenhum profissional cadastrado para esta categoria de serviço no momento.")
 
