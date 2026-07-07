@@ -35,7 +35,7 @@ if "categoria_ativa" not in st.session_state:
     st.session_state["categoria_ativa"] = None
 
 
-import requests
+
 
 # --- LÓGICA DAS FUNÇÕES DO BANCO (Conexão Direta HTTP contra Bugs de Rota) ---
 def executar_select_direto(tabela, parametros=""):
