@@ -35,11 +35,12 @@ if "categoria_ativa" not in st.session_state:
     st.session_state["categoria_ativa"] = None
 
 
-# --- LÓGICA DAS FUNÇÕES DO BANCO (Consulta via HTTP Direto para evitar Erro 404 do Driver) ---
+import requests
+
+# --- LÓGICA DAS FUNÇÕES DO BANCO (Conexão Direta HTTP contra Bugs de Rota) ---
 def executar_select_direto(tabela, parametros=""):
     try:
         url_base = st.secrets["URL_SUPABASE"].strip().rstrip('/')
-        # Monta a URL oficial da API PostgREST do seu projeto Supabase
         url_api = f"{url_base}/rest/v1/{tabela}{parametros}"
         
         headers = {
@@ -54,6 +55,25 @@ def executar_select_direto(tabela, parametros=""):
     except Exception:
         pass
     return None
+
+def executar_insert_direto(tabela, dados):
+    try:
+        url_base = st.secrets["URL_SUPABASE"].strip().rstrip('/')
+        url_api = f"{url_base}/rest/v1/{tabela}"
+        
+        headers = {
+            "apikey": st.secrets["KEY_SUPABASE"].strip(),
+            "Authorization": f"Bearer {st.secrets['KEY_SUPABASE'].strip()}",
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal"  # Configuração padrão do Supabase para inserção simples
+        }
+        
+        resposta = requests.post(url_api, headers=headers, json=dados)
+        if resposta.status_code in:
+            return True
+    except Exception:
+        pass
+    return False
 
 def buscar_categorias():
     dados = executar_select_direto("app_servicos_detalhes", "?select=categoria")
@@ -75,17 +95,16 @@ def buscar_servicos_por_categoria(cat):
     }
     return dados_locais.get(cat, [])
 
-def registrar_ligacao(cliente, profesional, atendeu):
+def registrar_ligacao(cliente, profissional, atendeu):
     dados = {
         "cliente_nome": cliente,
-        "profissional_nome": profesional,
+        "profissional_nome": profissional,
         "horario": datetime.datetime.now().isoformat(),
         "atendido": atendeu
     }
-    try:
-        supabase.table("app_servicos_logs_ligacoes").insert(dados).execute()
-    except Exception:
-        st.info(f"📌 [Modo Local] Ligação para {profisional} registrada na tela.")
+    sucesso = executar_insert_direto("app_servicos_logs_ligacoes", dados)
+    if not sucesso:
+        st.info(f"📌 [Modo Local] Ligação para {profissional} registrada na tela.")
 
 # --- MENU LATERAL (NAVEGAÇÃO) ---
 st.sidebar.title("🛠️ Central de Serviços")
@@ -112,7 +131,6 @@ st.sidebar.subheader("📢 Suporte & Reclamações")
 st.sidebar.write("Fale com o Administrador:")
 st.sidebar.info("📧 contato@pratti.com\n\n📞 (11) 99999-9999")
 
-
 # --- TELAS DO SISTEMA: 1. ÁREA ADMINISTRATIVA ---
 if menu == "Área Administrativa" and not st.session_state["user_logged"]:
     st.title("🔒 Login Administrativo")
@@ -137,22 +155,20 @@ elif menu == "Gerenciar Serviços/Preços":
     
     if st.button("Salvar Serviço"):
         if nova_cat and novo_serv:
-            try:
-                supabase.table("app_servicos_detalhes").insert({
-                    "categoria": nova_cat.strip().capitalize(),
-                    "nome_detalhado": novo_serv.strip(),
-                    "preco": novo_preco
-                }).execute()
+            sucesso = executar_insert_direto("app_servicos_detalhes", {
+                "categoria": nova_cat.strip().capitalize(),
+                "nome_detalhado": novo_serv.strip(),
+                "preco": novo_preco
+            })
+            if sucesso:
                 st.success(f"Botão/Serviço '{nova_cat}' atualizado com sucesso!")
                 st.rerun()
-            except Exception as error_db:
-                st.error(f"Erro ao salvar no banco: {error_db}.")
+            else:
+                st.error("Erro ao salvar no banco. Verifique as tabelas do Supabase.")
             
     st.subheader("Tabela de Preços Cadastrados")
     
-    # Executa a busca direta via API bypassando o erro 404 do pacote python
     dados_tabela = executar_select_direto("app_servicos_detalhes", "?select=categoria,nome_detalhado,preco")
-    
     if dados_tabela:
         st.dataframe(dados_tabela, use_container_width=True)
     else:
@@ -168,16 +184,16 @@ elif menu == "Cadastrar Profissional":
     
     if st.button("Cadastrar Profissional"):
         if nome and localidade and telefone:
-            try:
-                supabase.table("app_servicos_profissionais").insert({
-                    "nome": nome,
-                    "servico_principal": serv_principal,
-                    "localidade": localidade,
-                    "telefone": telefone
-                }).execute()
+            sucesso = executar_insert_direto("app_servicos_profissionais", {
+                "nome": nome,
+                "servico_principal": serv_principal,
+                "localidade": localidade,
+                "telefone": telefone
+            })
+            if sucesso:
                 st.success("Profissional cadastrado com sucesso!")
-            except Exception as e:
-                st.error(f"Erro ao cadastrar profissional: {e}")
+            else:
+                st.error("Erro ao cadastrar profissional no banco de dados.")
 
 elif menu == "Ver Logs de Ligações":
     st.title("📊 Histórico de Ligações Registradas")
@@ -185,7 +201,7 @@ elif menu == "Ver Logs de Ligações":
     if dados_logs:
         st.dataframe(dados_logs, use_container_width=True)
     else:
-        st.info("Nenhuma ligação registrada até o momento ou tabelas indisponíveis.")
+        st.info("Nenhuma ligação registrada até o momento.")
 
 # --- TELAS DO SISTEMA: 2. ÁREA DO CLIENTE (LOGIN/CADASTRO) ---
 elif menu == "Área do Cliente" and not st.session_state["user_logged"]:
@@ -199,7 +215,7 @@ elif menu == "Área do Cliente" and not st.session_state["user_logged"]:
             if dados_cli and len(dados_cli) > 0:
                 st.session_state["user_logged"] = True
                 st.session_state["user_type"] = "cliente"
-                st.session_state["cliente_dados"] = dados_cli[0]
+                st.session_state["cliente_dados"] = dados_cli[0] # Pega o primeiro dicionário retornado
                 st.success(f"Bem-vindo de volta, {st.session_state['cliente_dados']['nome_completo']}!")
                 st.rerun()
             else:
@@ -212,16 +228,17 @@ elif menu == "Área do Cliente" and not st.session_state["user_logged"]:
         
         if st.button("Concluir Cadastro"):
             if nome_c and endereco_c and whats_c:
-                try:
-                    res_check = executar_select_direto("app_servicos_clientes", f"?select=whatsapp&whatsapp=eq.{whats_c}")
-                    if res_check and len(res_check) > 0:
-                        st.warning("Este telefone já está cadastrado.")
-                    else:
-                        novo_cli = {"nome_completo": nome_c, "endereco": endereco_c, "whatsapp": whats_c}
-                        supabase.table("app_servicos_clientes").insert(novo_cli).execute()
+                res_check = executar_select_direto("app_servicos_clientes", f"?select=whatsapp&whatsapp=eq.{whats_c}")
+                if res_check and len(res_check) > 0:
+                    st.warning("Este telefone já está cadastrado.")
+                else:
+                    novo_cli = {"nome_completo": nome_c, "endereco": endereco_c, "whatsapp": whats_c}
+                    # Mudança cirúrgica aqui: gravando usando o método direto HTTP para contornar o erro 404
+                    cadastro_sucesso = executar_insert_direto("app_servicos_clientes", novo_cli)
+                    if cadastro_sucesso:
                         st.success("Cadastro efetuado! Faça o login na aba ao lado.")
-                except Exception as e:
-                    st.error(f"Erro no cadastro: {e}")
+                    else:
+                        st.error("Erro interno no servidor ao processar o cadastro.")
 
 # --- TELAS DO SISTEMA: 3. PAINEL DO CLIENTE LOGADO (BUSCA DINÂMICA) ---
 elif menu == "Buscar Serviços":
