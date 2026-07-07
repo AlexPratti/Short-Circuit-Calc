@@ -35,10 +35,6 @@ if "categoria_ativa" not in st.session_state:
     st.session_state["categoria_ativa"] = None
 
 
-
-
-
-
 # --- LÓGICA DAS FUNÇÕES DO BANCO (Conexão Direta HTTP contra Bugs de Rota) ---
 def executar_select_direto(tabela, parametros=""):
     try:
@@ -71,8 +67,8 @@ def executar_insert_direto(tabela, dados):
         }
         
         resposta = requests.post(url_api, headers=headers, json=dados)
-        # Correção definitiva: adicionada a lista de códigos HTTP válidos
-        if resposta.status_code in:
+        # Qualquer código da família 200 (200, 201, 204) indica sucesso na inserção
+        if 200 <= resposta.status_code < 300:
             return {"sucesso": True, "detalhes": ""}
         else:
             return {"sucesso": False, "detalhes": resposta.text}
@@ -134,6 +130,7 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("📢 Suporte & Reclamações")
 st.sidebar.write("Fale com o Administrador:")
 st.sidebar.info("📧 contato@pratti.com\n\n📞 (11) 99999-9999")
+
 
 
 
