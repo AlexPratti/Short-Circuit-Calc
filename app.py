@@ -11,9 +11,7 @@ st.set_page_config(
 
 # --- CREDENCIAIS ABSOLUTAS FIXAS (Isoladas do ecossistema do driver) ---
 URL_PROJETO_REAL = "https://supabase.co"
-
-# Cole aqui dentro das aspas a sua chave mestre (a que começa com sb_secret_...)
-CHAVE_PROJETO_REAL = "sb_secret_..."
+CHAVE_PROJETO_REAL = "sb_secret_FN7O_5Y1KJKcbflwgiplMA_fqCg_D9i..."
 
 # --- CONTROLE DE SESSÃO (STATE) ---
 if "user_logged" not in st.session_state:
@@ -24,7 +22,6 @@ if "cliente_dados" not in st.session_state:
     st.session_state["cliente_dados"] = None
 if "categoria_ativa" not in st.session_state:
     st.session_state["categoria_ativa"] = None
-
 
 # --- FUNÇÕES DE BANCO POR HTTP BRUTO (Garante rota absoluta contra desvios) ---
 def executar_select_direto(tabela, parametros=""):
@@ -99,7 +96,7 @@ else:
         menu = st.sidebar.radio("Painel Admin", ["Gerenciar Serviços/Preços", "Cadastrar Profissional", "Ver Logs de Ligações"])
     else:
         dados_cli = st.session_state['cliente_dados']
-        cliente_info_topo = dados_cli if isinstance(dados_cli, list) and len(dados_cli) > 0 else (dados_cli if dados_cli else {})
+        cliente_info_topo = dados_cli if isinstance(dados_cli, dict) else (dados_cli if isinstance(dados_cli, list) else {})
         st.sidebar.success(f"Cliente: {cliente_info_topo.get('nome_completo', 'Usuário')}")
         menu = st.sidebar.radio("Painel Cliente", ["Buscar Serviços", "Meus Dados"])
     
@@ -114,7 +111,6 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("📢 Suporte & Reclamações")
 st.sidebar.write("Fale com o Administrador:")
 st.sidebar.info("📧 contato@pratti.com\n\n📞 (11) 99999-9999")
-
 
 # --- TELAS DO SISTEMA: 1. ÁREA ADMINISTRATIVA ---
 if menu == "Área Administrativa" and not st.session_state["user_logged"]:
@@ -150,7 +146,7 @@ elif menu == "Gerenciar Serviços/Preços":
                 st.rerun()
             else:
                 st.error("Erro interno ao tentar salvar dados no banco.")
-            
+
     st.subheader("Tabela de Preços Cadastrados")
     dados_tabela = executar_select_direto("app_servicos_detalhes", "?select=categoria,nome_detalhado,preco")
     if dados_tabela and not isinstance(dados_tabela, dict):
@@ -199,12 +195,12 @@ elif menu == "Área do Cliente" and not st.session_state["user_logged"]:
             if dados_cli and not isinstance(dados_cli, dict) and len(dados_cli) > 0:
                 st.session_state["user_logged"] = True
                 st.session_state["user_type"] = "cliente"
-                st.session_state["cliente_dados"] = dados_cli if isinstance(dados_cli, list) else dados_cli
+                st.session_state["cliente_dados"] = dados_cli if isinstance(dados_cli, dict) else (dados_cli if isinstance(dados_cli, list) else {})
                 st.success("Login efetuado com sucesso!")
                 st.rerun()
             else:
                 st.error("Telefone não encontrado nas tabelas do sistema.")
-                
+
     with aba_cadastro:
         nome_c = st.text_input("Nome Completo")
         endereco_c = st.text_input("Endereço Residencial")
@@ -226,7 +222,7 @@ elif menu == "Área do Cliente" and not st.session_state["user_logged"]:
 # --- TELAS DO SISTEMA: 3. PAINEL DO CLIENTE LOGADO ---
 elif menu == "Buscar Serviços":
     dados_cli_busca = st.session_state['cliente_dados']
-    cliente_info_busca = dados_cli_busca if isinstance(dados_cli_busca, list) and len(dados_cli_busca) > 0 else (dados_cli_busca if dados_cli_busca else {})
+    cliente_info_busca = dados_cli_busca if isinstance(dados_cli_busca, dict) else (dados_cli_busca if isinstance(dados_cli_busca, list) else {})
     
     st.title(f"Olá, {cliente_info_busca.get('nome_completo', 'Cliente')}! Do que precisa hoje?")
     categorias = buscar_categorias()
@@ -279,7 +275,7 @@ elif menu == "Buscar Serviços":
 
 elif menu == "Meus Dados":
     dados_cli_perfil = st.session_state['cliente_dados']
-    cliente_info_perfil = dados_cli_perfil if isinstance(dados_cli_perfil, list) and len(dados_cli_perfil) > 0 else (dados_cli_perfil if dados_cli_perfil else {})
+    cliente_info_perfil = dados_cli_perfil if isinstance(dados_cli_perfil, dict) else (dados_cli_perfil if isinstance(dados_cli_perfil, list) else {})
     
     st.title("👤 Meus Dados de Cadastro")
     st.write(f"**Nome:** {cliente_info_perfil.get('nome_completo', '')}")
