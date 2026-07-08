@@ -9,12 +9,16 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- CONEXÃO COM O SUPABASE (Inicialização nativa estável) ---
+# --- CONFIGURAÇÃO ABSOLUTA DA CONEXÃO (Privilégios administrativos) ---
+URL_PROJETO_REAL = "https://supabase.co"
+
+# Cole aqui dentro das aspas a chave de baixo da sua foto (a que começa com sb_secret_...)
+CHAVE_MESTRA = "sb_secret_..." 
+
+# --- CONEXÃO COM O SUPABASE ---
 @st.cache_resource
 def conectar_banco() -> Client:
-    url = st.secrets["URL_SUPABASE"].strip().rstrip('/')
-    key = st.secrets["KEY_SUPABASE"].strip()
-    return create_client(url, key)
+    return create_client(URL_PROJETO_REAL, CHAVE_MESTRA)
 
 try:
     supabase = conectar_banco()
@@ -31,6 +35,7 @@ if "cliente_dados" not in st.session_state:
     st.session_state["cliente_dados"] = None
 if "categoria_ativa" not in st.session_state:
     st.session_state["categoria_ativa"] = None
+
 
 # --- LÓGICA DAS FUNÇÕES DE BANCO NATIVAS ---
 def buscar_categorias():
