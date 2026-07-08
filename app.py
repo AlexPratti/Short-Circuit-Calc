@@ -12,7 +12,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- RECONSTRUTOR AUTOMÁTICO DE URL DA API (Corrige o 'supabase.co' em tempo de execução) ---
+# --- RECONSTRUTOR AUTOMÁTICO DE URL DA API ---
 def extrair_url_api_da_chave() -> str:
     """
     Decodifica o token JWT da KEY_SUPABASE para extrair o identificador real do projeto.
@@ -37,7 +37,7 @@ def extrair_url_api_da_chave() -> str:
         pass
     return "https://supabase.co"
 
-# Descobre o endpoint real do banco de dados (ex: https://supabase.co)
+# Descobre o endpoint real do seu banco de dados
 URL_FINAL_API = extrair_url_api_da_chave()
 
 # --- CONEXÃO COM O SUPABASE ---
@@ -61,10 +61,18 @@ if "cliente_dados" not in st.session_state:
 if "categoria_ativa" not in st.session_state:
     st.session_state["categoria_ativa"] = None
 
-# --- LÓGICA DAS FUNÇÕES DO BANCO (Consultas diretas à API Rest corrigida) ---
+# --- RESOLUTOR DE ROTA COM ENVELOPE DINÂMICO ---
+if "url_banco_memoria" not in st.session_state:
+    st.session_state["url_banco_memoria"] = URL_FINAL_API
+
+def obter_url_trabalho():
+    if st.session_state["url_banco_memoria"] and "xyz" not in st.session_state["url_banco_memoria"]:
+        return st.session_state["url_banco_memoria"].strip().rstrip('/')
+    return URL_FINAL_API
+
 def executar_select_direto(tabela, parametros=""):
     try:
-        url_api = f"{URL_FINAL_API}/rest/v1/{tabela}{parametros}"
+        url_api = f"{obter_url_trabalho()}/rest/v1/{tabela}{parametros}"
         headers = {
             "apikey": st.secrets["KEY_SUPABASE"].strip(),
             "Authorization": f"Bearer {st.secrets['KEY_SUPABASE'].strip()}",
@@ -79,7 +87,7 @@ def executar_select_direto(tabela, parametros=""):
 
 def executar_insert_direto(tabela, dados):
     try:
-        url_api = f"{URL_FINAL_API}/rest/v1/{tabela}"
+        url_api = f"{obter_url_trabalho()}/rest/v1/{tabela}"
         headers = {
             "apikey": st.secrets["KEY_SUPABASE"].strip(),
             "Authorization": f"Bearer {st.secrets['KEY_SUPABASE'].strip()}",
@@ -90,7 +98,7 @@ def executar_insert_direto(tabela, dados):
         if 200 <= resposta.status_code < 300:
             return {"sucesso": True, "detalhes": ""}
         else:
-            return {"sucesso": False, "detalhes": resposta.text}
+            return {"sucesso": False, "detalhes": f"Status {resposta.status_code} - {resposta.text}"}
     except Exception as e:
         return {"sucesso": False, "detalhes": str(e)}
 
@@ -100,7 +108,7 @@ def buscar_categorias():
         categorias = list(set([item['categoria'] for item in dados if 'categoria' in item]))
         if categorias:
             return categorias
-    return ["Elétrica", "Hydráulica", "Pintura"]
+    return ["Elétrica", "Hidráulica", "Pintura"]
 
 def buscar_servicos_por_categoria(cat):
     dados = executar_select_direto("app_servicos_detalhes", f"?select=categoria,nome_detalhado,preco&categoria=eq.{cat}")
@@ -136,7 +144,7 @@ else:
         menu = st.sidebar.radio("Painel Admin", ["Gerenciar Serviços/Preços", "Cadastrar Profissional", "Ver Logs de Ligações"])
     else:
         dados_cliente_topo = st.session_state['cliente_dados']
-        nome_exibir = dados_cliente_topo[0].get('nome_completo', 'Usuário') if isinstance(dados_cliente_topo, list) else dados_cliente_topo.get('nome_completo', 'Usuário')
+        nome_exibir = dados_cliente_topo.get('nome_completo', 'Usuário') if isinstance(dados_cliente_topo, list) and len(dados_cliente_topo) > 0 else dados_cliente_topo.get('nome_completo', 'Usuário')
         st.sidebar.success(f"Cliente: {nome_exibir}")
         menu = st.sidebar.radio("Painel Cliente", ["Buscar Serviços", "Meus Dados"])
     
@@ -182,7 +190,7 @@ elif menu == "Gerenciar Serviços/Preços":
                 "preco": novo_preco
             })
             if retorno["sucesso"]:
-                st.success(f"Botão/Serviço '{nova_cat}' atualizado com sucesso!")
+                st.success(f"Botão/Serviço '{nova_cat}' atualizado!")
                 st.rerun()
             else:
                 st.error("Erro ao salvar serviço no banco de dados.")
@@ -257,7 +265,19 @@ elif menu == "Área do Cliente" and not st.session_state["user_logged"]:
                     if retorno["sucesso"]:
                         st.success("Cadastro efetuado! Faça o login na aba ao lado.")
                     else:
-                        st.error("Erro interno no servidor ao processar o cadastro.")
+                        st.error("Erro interno ao processar o cadastro devido ao 'supabase.co' travado nos Secrets.")
+                        
+                        # --- FORMULÁRIO DE CORREÇÃO EM TELA ---
+                        st.markdown("---")
+                        st.warning("⚙️ **Atalho de Alinhamento de Rota Automático:**")
+                        st.write("Para desbloquear o app agora, cole a sua **Project URL** real abaixo (você encontra ela em *Project Settings > API* no painel do Supabase):")
+                        url_ajuste = st.text_input("Cole o link correto aqui (Ex: https://supabase.co)", placeholder="https://supabase.co")
+                        if st.button("🔧 Forçar Gravação com esta URL"):
+                            if url_ajuste and "supabase.co" in url_ajuste and "https://supabase.co" not in url_ajuste:
+                                st.session_state["url_banco_memoria"] = url_ajuste.strip()
+                                st.success("Link real salvo na memória do app! Clique em 'Concluir Cadastro' novamente.")
+                            else:
+                                st.error("Por favor, insira a URL de API correta do seu projeto (não use a institucional).")
 
 # --- TELAS DO SISTEMA: 3. PAINEL DO CLIENTE LOGADO (BUSCA DINÂMICA) ---
 elif menu == "Buscar Serviços":
@@ -290,10 +310,7 @@ elif menu == "Buscar Serviços":
             opcao_servico = cat_ativa
 
         st.markdown("#### 🧔 Profissionais Disponíveis na sua Área:")
-        
-        profissionais_falsos = [
-            {"id": 1, "nome": "Carlos Silva", "localidade": "Centro", "telefone": "11999999999"}
-        ]
+        profissionais_falsos = [{"id": 1, "nome": "Carlos Silva", "localidade": "Centro", "telefone": "11999999999"}]
         
         lista_prof = executar_select_direto("app_servicos_profissionais", f"?select=nome,localidade,telefone&servico_principal=eq.{cat_ativa}")
         if not lista_prof:
@@ -307,19 +324,11 @@ elif menu == "Buscar Serviços":
                 c1, c2 = st.columns(2)
                 
                 if c1.button(f"📞 Ligar para {prof_item['nome']}", key=f"ligar_{idx_p}"):
-                    registrar_ligacao(
-                        cliente=dados_cliente_busca.get('nome_completo', 'Cliente'),
-                        profissional=prof_item["nome"],
-                        atendido=True
-                    )
+                    registrar_ligacao(cliente=dados_cliente_busca.get('nome_completo', 'Cliente'), profissional=prof_item["nome"], atendeu=True)
                     st.success(f"Ligação registrada! Contato: {prof_item['telefone']}")
                     
                 if c2.button(f"❌ Chamei mas não atendeu", key=f"nao_atendeu_{idx_p}"):
-                    registrar_ligacao(
-                        cliente=dados_cliente_busca.get('nome_completo', 'Cliente'),
-                        profissional=prof_item["nome"],
-                        atendido=False
-                    )
+                    registrar_ligacao(cliente=dados_cliente_busca.get('nome_completo', 'Cliente'), profissional=prof_item["nome"], atendeu=False)
                     st.warning(f"Tentativa de contato sem sucesso registrada.")
 
 elif menu == "Meus Dados":
