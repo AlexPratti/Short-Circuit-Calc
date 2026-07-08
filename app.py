@@ -23,13 +23,17 @@ if "cliente_dados" not in st.session_state:
 if "categoria_ativa" not in st.session_state:
     st.session_state["categoria_ativa"] = None
 
-# --- FUNÇÕES DE BANCO POR HTTP BRUTO (Garante rota absoluta contra desvios) ---
+# --- FUNÇÕES DE BANCO POR HTTP BRUTO SANITIZADO ---
 def executar_select_direto(tabela, parametros=""):
     try:
-        url_api = f"{URL_PROJETO_REAL}/rest/v1/{tabela}{parametros}"
+        # Remove espaços e quebras de linha invisíveis das credenciais
+        url_limpa = URL_PROJETO_REAL.strip().rstrip('/')
+        chave_limpa = CHAVE_PROJETO_REAL.strip()
+        
+        url_api = f"{url_limpa}/rest/v1/{tabela}{parametros}"
         headers = {
-            "apikey": CHAVE_PROJETO_REAL,
-            "Authorization": f"Bearer {CHAVE_PROJETO_REAL}",
+            "apikey": chave_limpa,
+            "Authorization": f"Bearer {chave_limpa}",
             "Content-Type": "application/json"
         }
         resposta = requests.get(url_api, headers=headers)
@@ -41,10 +45,14 @@ def executar_select_direto(tabela, parametros=""):
 
 def executar_insert_direto(tabela, dados):
     try:
-        url_api = f"{URL_PROJETO_REAL}/rest/v1/{tabela}"
+        # Remove espaços e quebras de linha invisíveis das credenciais
+        url_limpa = URL_PROJETO_REAL.strip().rstrip('/')
+        chave_limpa = CHAVE_PROJETO_REAL.strip()
+        
+        url_api = f"{url_limpa}/rest/v1/{tabela}"
         headers = {
-            "apikey": CHAVE_PROJETO_REAL,
-            "Authorization": f"Bearer {CHAVE_PROJETO_REAL}",
+            "apikey": chave_limpa,
+            "Authorization": f"Bearer {chave_limpa}",
             "Content-Type": "application/json",
             "Prefer": "return=minimal"
         }
@@ -111,6 +119,7 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("📢 Suporte & Reclamações")
 st.sidebar.write("Fale com o Administrador:")
 st.sidebar.info("📧 contato@pratti.com\n\n📞 (11) 99999-9999")
+
 
 # --- TELAS DO SISTEMA: 1. ÁREA ADMINISTRATIVA ---
 if menu == "Área Administrativa" and not st.session_state["user_logged"]:
