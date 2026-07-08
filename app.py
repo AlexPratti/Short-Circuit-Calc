@@ -141,18 +141,27 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("📢 Suporte & Reclamações")
 st.sidebar.write("Fale com o Administrador:")
 
-# Configuração do WhatsApp do Administrador
-tel_admin = "11999999999" # Digite aqui o número do administrador (apenas números com DDD)
+# --- MELHORIA: BUSCANDO CONTATOS DIRETAMENTE DOS SECRETS ---
+tel_admin_seguro = st.secrets["TELEFONE_ADMIN"].strip()
+email_admin_seguro = st.secrets["EMAIL_ADMIN"].strip()
+
+# Formatação visual do telefone para exibição amigável (Ex: (11) 99999-9999)
+if len(tel_admin_seguro) >= 11:
+    tel_formatado = f"({tel_admin_seguro[:2]}) {tel_admin_seguro[2:7]}-{tel_admin_seguro[7:]}"
+else:
+    tel_formatado = tel_admin_seguro
+
 mensagem_admin = "Olá, preciso de suporte no aplicativo de Serviços Prediais."
 msg_admin_codificada = urllib.parse.quote(mensagem_admin)
-link_whats_admin = f"https://wa.me{tel_admin}?text={msg_admin_codificada}"
+link_whats_admin = f"https://wa.me{tel_admin_seguro}?text={msg_admin_codificada}"
 
 # Botão visual do WhatsApp do Admin
 link_html_admin = f'<a href="{link_whats_admin}" target="_blank" style="text-decoration: none;"><button style="width: 100%; background-color: #25D366; color: white; border: none; padding: 0.5rem; border-radius: 4px; cursor: pointer; font-weight: bold; text-align: center; margin-bottom: 10px;">💬 Suporte via WhatsApp</button></a>'
 st.sidebar.markdown(link_html_admin, unsafe_allow_html=True)
 
-# Mantendo as informações adicionais originais
-st.sidebar.info("📧 contato@pratti.com\n\n📞 (11) 99999-9999")
+# Informações adicionais exibidas puxando das chaves seguras
+st.sidebar.info(f"📧 {email_admin_seguro}\n\n📞 {tel_formatado}")
+
 
 
 # --- TELAS DO SISTEMA: 1. ÁREA ADMINISTRATIVA ---
