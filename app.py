@@ -2,6 +2,7 @@ import streamlit as st
 import datetime
 import json
 import requests
+import base64
 from supabase import create_client, Client
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
@@ -11,12 +12,38 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- CONEXÃO COM O SUPABASE (Limpeza estrita de strings contra falhas de rota) ---
+# --- RECONSTRUTOR AUTOMÁTICO DE URL DA API (Corrige o 'supabase.co' em tempo de execução) ---
+def extrair_url_api_da_chave() -> str:
+    """
+    Decodifica o token JWT da KEY_SUPABASE para extrair o identificador real do projeto.
+    Dessa forma, o link aponta para o banco correto mesmo se o segredo contiver 'https://supabase.co'.
+    """
+    try:
+        chave = st.secrets["KEY_SUPABASE"].strip()
+        partes = chave.split('.')
+        if len(partes) > 1:
+            payload_b64 = partes[1]
+            payload_b64 += '=' * (-len(payload_b64) % 4)
+            dados_token = json.loads(base64.b64decode(payload_b64).decode('utf-8'))
+            
+            ref_projeto = dados_token.get("iss", "")
+            if "supabase.co" in ref_projeto:
+                return ref_projeto.rstrip('/')
+            
+            id_projeto = ref_projeto.split('/')[-1] if '/' in ref_projeto else ref_projeto
+            if id_projeto and len(id_projeto) > 5:
+                return f"https://{id_projeto}.supabase.co"
+    except Exception:
+        pass
+    return "https://supabase.co"
+
+# Descobre o endpoint real do banco de dados (ex: https://supabase.co)
+URL_FINAL_API = extrair_url_api_da_chave()
+
+# --- CONEXÃO COM O SUPABASE ---
 @st.cache_resource
 def init_supabase() -> Client:
-    url = st.secrets["URL_SUPABASE"].strip().rstrip('/')
-    key = st.secrets["KEY_SUPABASE"].strip()
-    return create_client(url, key)
+    return create_client(URL_FINAL_API, st.secrets["KEY_SUPABASE"].strip())
 
 try:
     supabase = init_supabase()
@@ -28,29 +55,21 @@ except Exception as e:
 if "user_logged" not in st.session_state:
     st.session_state["user_logged"] = False
 if "user_type" not in st.session_state:
-    st.session_state["user_type"] = None  # 'admin' ou 'cliente'
+    st.session_state["user_type"] = None
 if "cliente_dados" not in st.session_state:
     st.session_state["cliente_dados"] = None
 if "categoria_ativa" not in st.session_state:
     st.session_state["categoria_ativa"] = None
 
-
-# --- LÓGICA DAS FUNÇÕES DO BANCO (Conexão Direta e Absoluta contra Erro 404/HTML) ---
+# --- LÓGICA DAS FUNÇÕES DO BANCO (Consultas diretas à API Rest corrigida) ---
 def executar_select_direto(tabela, parametros=""):
     try:
-        url_base = st.secrets["URL_SUPABASE"].strip().rstrip('/')
-        # Garante o roteamento absoluto correto para a API PostgREST
-        if "/rest/v1" not in url_base:
-            url_api = f"{url_base}/rest/v1/{tabela}{parametros}"
-        else:
-            url_api = f"{url_base}/{tabela}{parametros}"
-        
+        url_api = f"{URL_FINAL_API}/rest/v1/{tabela}{parametros}"
         headers = {
             "apikey": st.secrets["KEY_SUPABASE"].strip(),
             "Authorization": f"Bearer {st.secrets['KEY_SUPABASE'].strip()}",
             "Content-Type": "application/json"
         }
-        
         resposta = requests.get(url_api, headers=headers)
         if resposta.status_code == 200:
             return resposta.json()
@@ -60,41 +79,20 @@ def executar_select_direto(tabela, parametros=""):
 
 def executar_insert_direto(tabela, dados):
     try:
-        url_base = st.secrets["URL_SUPABASE"].strip().rstrip('/')
-        
-        # Correção da Rota do Supabase: Garante que o sufixo /rest/v1 exista de forma correta
-        if "/rest/v1" not in url_base:
-            # Se a URL fornecida for apenas o domínio, adiciona obrigatoriamente a rota da API Rest
-            url_api = f"{url_base}/rest/v1/{tabela}"
-        else:
-            # Caso a URL já possua o sufixo, evita a duplicidade de rota que gera o erro 404
-            url_api = f"{url_base}/{tabela}"
-            
+        url_api = f"{URL_FINAL_API}/rest/v1/{tabela}"
         headers = {
             "apikey": st.secrets["KEY_SUPABASE"].strip(),
             "Authorization": f"Bearer {st.secrets['KEY_SUPABASE'].strip()}",
             "Content-Type": "application/json",
-            "Prefer": "return=minimal" # Mudado para minimal para evitar conflito de serialização no POST
+            "Prefer": "return=minimal"
         }
-        
         resposta = requests.post(url_api, headers=headers, json=dados)
-        
-        # Se der erro 404 (Rota Inválida), tenta automaticamente o caminho alternativo absoluto
-        if resposta.status_code == 404 and "/rest/v1" not in url_base:
-            url_api_alternativa = f"{url_base}/{tabela}"
-            resposta = requests.post(url_api_alternativa, headers=headers, json=dados)
-            
         if 200 <= resposta.status_code < 300:
             return {"sucesso": True, "detalhes": ""}
         else:
-            st.error(f"Erro reportado pelo banco PostgreSQL (Status {resposta.status_code}):")
-            st.code(resposta.text)
             return {"sucesso": False, "detalhes": resposta.text}
     except Exception as e:
-        st.exception(e)
         return {"sucesso": False, "detalhes": str(e)}
-
-
 
 def buscar_categorias():
     dados = executar_select_direto("app_servicos_detalhes", "?select=categoria")
@@ -102,7 +100,7 @@ def buscar_categorias():
         categorias = list(set([item['categoria'] for item in dados if 'categoria' in item]))
         if categorias:
             return categorias
-    return ["Elétrica", "Hidráulica", "Pintura"]
+    return ["Elétrica", "Hydráulica", "Pintura"]
 
 def buscar_servicos_por_categoria(cat):
     dados = executar_select_direto("app_servicos_detalhes", f"?select=categoria,nome_detalhado,preco&categoria=eq.{cat}")
@@ -137,9 +135,9 @@ else:
         st.sidebar.success("Conectado como: PRATTI")
         menu = st.sidebar.radio("Painel Admin", ["Gerenciar Serviços/Preços", "Cadastrar Profissional", "Ver Logs de Ligações"])
     else:
-        # Tratamento defensivo para evitar falha se o cliente vier mapeado dentro de uma lista
-        dados_cliente_topo = st.session_state['cliente_dados'][0] if isinstance(st.session_state['cliente_dados'], list) else st.session_state['cliente_dados']
-        st.sidebar.success(f"Cliente: {dados_cliente_topo.get('nome_completo', 'Usuário')}")
+        dados_cliente_topo = st.session_state['cliente_dados']
+        nome_exibir = dados_cliente_topo[0].get('nome_completo', 'Usuário') if isinstance(dados_cliente_topo, list) else dados_cliente_topo.get('nome_completo', 'Usuário')
+        st.sidebar.success(f"Cliente: {nome_exibir}")
         menu = st.sidebar.radio("Painel Cliente", ["Buscar Serviços", "Meus Dados"])
     
     if st.sidebar.button("Sair / Logout"):
@@ -154,8 +152,6 @@ st.sidebar.subheader("📢 Suporte & Reclamações")
 st.sidebar.write("Fale com o Administrador:")
 st.sidebar.info("📧 contato@pratti.com\n\n📞 (11) 99999-9999")
 
-
-
 # --- TELAS DO SISTEMA: 1. ÁREA ADMINISTRATIVA ---
 if menu == "Área Administrativa" and not st.session_state["user_logged"]:
     st.title("🔒 Login Administrativo")
@@ -163,7 +159,7 @@ if menu == "Área Administrativa" and not st.session_state["user_logged"]:
     login_pass = st.text_input("Senha", type="password")
     
     if st.button("Acessar"):
-        if login_user.strip().upper() == st.secrets["ADMIN_USER"].strip().upper() and login_pass == st.secrets["ADMIN_PASS"]:
+        if login_user.strip() == st.secrets["ADMIN_USER"].strip() and login_pass == st.secrets["ADMIN_PASS"]:
             st.session_state["user_logged"] = True
             st.session_state["user_type"] = "admin"
             st.success("Login administrativo realizado com sucesso!")
@@ -192,7 +188,6 @@ elif menu == "Gerenciar Serviços/Preços":
                 st.error("Erro ao salvar serviço no banco de dados.")
             
     st.subheader("Tabela de Preços Cadastrados")
-    
     dados_tabela = executar_select_direto("app_servicos_detalhes", "?select=categoria,nome_detalhado,preco")
     if dados_tabela:
         st.dataframe(dados_tabela, use_container_width=True)
@@ -266,7 +261,7 @@ elif menu == "Área do Cliente" and not st.session_state["user_logged"]:
 
 # --- TELAS DO SISTEMA: 3. PAINEL DO CLIENTE LOGADO (BUSCA DINÂMICA) ---
 elif menu == "Buscar Serviços":
-    dados_cliente_busca = st.session_state['cliente_dados'][0] if isinstance(st.session_state['cliente_dados'], list) else st.session_state['cliente_dados']
+    dados_cliente_busca = st.session_state['cliente_dados']
     st.title(f"Olá, {dados_cliente_busca.get('nome_completo', 'Cliente')}! Do que precisa hoje?")
     categorias = buscar_categorias()
     st.subheader("Selecione a categoria do serviço:")
@@ -328,7 +323,7 @@ elif menu == "Buscar Serviços":
                     st.warning(f"Tentativa de contato sem sucesso registrada.")
 
 elif menu == "Meus Dados":
-    dados_cliente_perfil = st.session_state['cliente_dados'][0] if isinstance(st.session_state['cliente_dados'], list) else st.session_state['cliente_dados']
+    dados_cliente_perfil = st.session_state['cliente_dados']
     st.title("👤 Meus Dados de Cadastro")
     st.write(f"**Nome:** {dados_cliente_perfil.get('nome_completo', '')}")
     st.write(f"**Endereço de Atendimento:** {dados_cliente_perfil.get('endereco', '')}")
