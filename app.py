@@ -197,15 +197,20 @@ elif menu == "Área do Cliente" and not st.session_state["user_logged"]:
     with aba_login:
         tel_login = st.text_input("Digite seu Telefone WhatsApp Cadastrado", key="login_tel")
         if st.button("Entrar"):
-            dados_cli = executar_select_direto("app_servicos_clientes", f"?select=nome_completo,endereco,whatsapp&whatsapp=eq.{tel_login}")
-            if dados_cli and not isinstance(dados_cli, dict) and len(dados_cli) > 0:
+            # Faz a busca exata removendo espaços do campo
+            dados_cli = executar_select_direto("app_servicos_clientes", f"?select=nome_completo,endereco,whatsapp&whatsapp=eq.{tel_login.strip()}")
+            
+            if dados_cli and isinstance(dados_cli, list) and len(dados_cli) > 0:
                 st.session_state["user_logged"] = True
                 st.session_state["user_type"] = "cliente"
-                st.session_state["cliente_dados"] = dados_cli if isinstance(dados_cli, dict) else (dados_cli if isinstance(dados_cli, list) else {})
+                # CORREÇÃO CRUCIAL: Extrai o primeiro dicionário da lista de resposta
+                st.session_state["cliente_dados"] = dados_cli[0]
                 st.success("Login efetuado com sucesso!")
                 st.rerun()
             else:
                 st.error("Telefone não encontrado nas tabelas do sistema.")
+                # Exibe o que o banco de dados retornou para checagem visual
+                st.info(f"Retorno do Banco para o número '{tel_login}': {str(dados_cli)}")
 
     with aba_cadastro:
         nome_c = st.text_input("Nome Completo")
@@ -214,11 +219,11 @@ elif menu == "Área do Cliente" and not st.session_state["user_logged"]:
         
         if st.button("Concluir Cadastro"):
             if nome_c and endereco_c and whats_c:
-                res_check = executar_select_direto("app_servicos_clientes", f"?select=whatsapp&whatsapp=eq.{whats_c}")
-                if res_check and not isinstance(res_check, dict) and len(res_check) > 0:
+                res_check = executar_select_direto("app_servicos_clientes", f"?select=whatsapp&whatsapp=eq.{whats_c.strip()}")
+                if res_check and isinstance(res_check, list) and len(res_check) > 0:
                     st.warning("Este telefone já está cadastrado.")
                 else:
-                    novo_cli = {"nome_completo": nome_c, "endereco": endereco_c, "whatsapp": whats_c}
+                    novo_cli = {"nome_completo": nome_c.strip(), "endereco": endereco_c.strip(), "whatsapp": whats_c.strip()}
                     retorno = executar_insert_direto("app_servicos_clientes", novo_cli)
                     if retorno["sucesso"]:
                         st.success("Cadastro efetuado com sucesso! Faça o login na aba ao lado.")
@@ -227,8 +232,7 @@ elif menu == "Área do Cliente" and not st.session_state["user_logged"]:
 
 # --- TELAS DO SISTEMA: 3. PAINEL DO CLIENTE LOGADO ---
 elif menu == "Buscar Serviços":
-    dados_cli_busca = st.session_state['cliente_dados']
-    cliente_info_busca = dados_cli_busca if isinstance(dados_cli_busca, dict) else (dados_cli_busca if isinstance(dados_cli_busca, list) else {})
+    cliente_info_busca = st.session_state['cliente_dados'] if st.session_state['cliente_dados'] else {}
     
     st.title(f"Olá, {cliente_info_busca.get('nome_completo', 'Cliente')}! Do que precisa hoje?")
     categorias = buscar_categorias()
@@ -280,8 +284,7 @@ elif menu == "Buscar Serviços":
                     st.warning(f"Tentativa de contato sem sucesso registrada.")
 
 elif menu == "Meus Dados":
-    dados_cli_perfil = st.session_state['cliente_dados']
-    cliente_info_perfil = dados_cli_perfil if isinstance(dados_cli_perfil, dict) else (dados_cli_perfil if isinstance(dados_cli_perfil, list) else {})
+    cliente_info_perfil = st.session_state['cliente_dados'] if st.session_state['cliente_dados'] else {}
     
     st.title("👤 Meus Dados de Cadastro")
     st.write(f"**Nome:** {cliente_info_perfil.get('nome_completo', '')}")
