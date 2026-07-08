@@ -10,7 +10,7 @@ st.set_page_config(
 )
 
 # --- CREDENCIAIS ABSOLUTAS FIXAS (Isoladas do ecossistema do driver) ---
-URL_PROJETO_REAL = "https://supabase.co"
+URL_PROJETO_REAL = "https://lfgqxphittdatzknwkqw.supabase.co/rest/v1/"
 CHAVE_PROJETO_REAL = "sb_secret_FN7O_5Y1KJKcbflwgiplMA_fqCg_D9i..."
 
 # --- CONTROLE DE SESSÃO (STATE) ---
