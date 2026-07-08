@@ -61,7 +61,6 @@ def executar_select_direto(tabela, parametros=""):
 def executar_insert_direto(tabela, dados):
     try:
         url_base = st.secrets["URL_SUPABASE"].strip().rstrip('/')
-        # Garante o roteamento absoluto correto para a API PostgREST no método POST
         if "/rest/v1" not in url_base:
             url_api = f"{url_base}/rest/v1/{tabela}"
         else:
@@ -78,9 +77,14 @@ def executar_insert_direto(tabela, dados):
         if 200 <= resposta.status_code < 300:
             return {"sucesso": True, "detalhes": ""}
         else:
+            # Em vez de omitir, vamos estourar o erro técnico na tela do usuário para leitura
+            st.error(f"Erro reportado pelo banco PostgreSQL (Status {resposta.status_code}):")
+            st.code(resposta.text) # <-- Exibe a mensagem de rejeição do Supabase
             return {"sucesso": False, "detalhes": resposta.text}
     except Exception as e:
+        st.exception(e)
         return {"sucesso": False, "detalhes": str(e)}
+
 
 def buscar_categorias():
     dados = executar_select_direto("app_servicos_detalhes", "?select=categoria")
