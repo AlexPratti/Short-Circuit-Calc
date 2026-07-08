@@ -1,6 +1,6 @@
 import streamlit as st
 import datetime
-from supabase import create_client, Client
+import requests
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(
@@ -9,20 +9,9 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- CREDENCIAIS FIXAS DO PROJETO ---
+# --- CREDENCIAIS ABSOLUTAS FIXAS (Isoladas do ecossistema do driver) ---
 URL_PROJETO_REAL = "https://supabase.co"
 CHAVE_PROJETO_REAL = "sb_publishable_zLiararaOIVVcwQm6oR2IQ_Sb0YOnbIqf6XwH7GqBvI3l8fL4Y2Xk8Wq"
-
-# --- CONEXÃO EXCLUSIVA VIA CLIENTE OFICIAL ---
-@st.cache_resource
-def conectar_banco() -> Client:
-    return create_client(URL_PROJETO_REAL, CHAVE_PROJETO_REAL)
-
-try:
-    supabase = conectar_banco()
-except Exception as e:
-    st.error(f"Erro técnico na inicialização do banco: {e}")
-    st.stop()
 
 # --- CONTROLE DE SESSÃO (STATE) ---
 if "user_logged" not in st.session_state:
@@ -34,23 +23,52 @@ if "cliente_dados" not in st.session_state:
 if "categoria_ativa" not in st.session_state:
     st.session_state["categoria_ativa"] = None
 
-# --- LÓGICA DAS FUNÇÕES DE BANCO NATIVAS ---
-def buscar_categorias():
+
+# --- FUNÇÕES DE BANCO POR HTTP BRUTO (Garante rota absoluta contra desvios) ---
+def executar_select_direto(tabela, parametros=""):
     try:
-        res = supabase.table("app_servicos_detalhes").select("categoria").execute()
-        if res.data:
-            return list(set([item['categoria'] for item in res.data if 'categoria' in item]))
+        url_api = f"{URL_PROJETO_REAL}/rest/v1/{tabela}{parametros}"
+        headers = {
+            "apikey": CHAVE_PROJETO_REAL,
+            "Authorization": f"Bearer {CHAVE_PROJETO_REAL}",
+            "Content-Type": "application/json"
+        }
+        resposta = requests.get(url_api, headers=headers)
+        if resposta.status_code == 200:
+            return resposta.json()
     except Exception:
         pass
+    return None
+
+def executar_insert_direto(tabela, dados):
+    try:
+        url_api = f"{URL_PROJETO_REAL}/rest/v1/{tabela}"
+        headers = {
+            "apikey": CHAVE_PROJETO_REAL,
+            "Authorization": f"Bearer {CHAVE_PROJETO_REAL}",
+            "Content-Type": "application/json"
+        }
+        # Inserção pura via POST sem cabeçalhos de retorno complexos que confundem o gateway
+        resposta = requests.post(url_api, headers=headers, json=dados)
+        if 200 <= resposta.status_code < 300:
+            return {"sucesso": True, "detalhes": ""}
+        else:
+            return {"sucesso": False, "detalhes": f"Status {resposta.status_code}"}
+    except Exception as e:
+        return {"sucesso": False, "detalhes": str(e)}
+
+def buscar_categorias():
+    dados = executar_select_direto("app_servicos_detalhes", "?select=categoria")
+    if dados and not isinstance(dados, dict):
+        categorias = list(set([item['categoria'] for item in dados if 'categoria' in item]))
+        if categorias:
+            return categorias
     return ["Elétrica", "Hidráulica", "Pintura"]
 
 def buscar_servicos_por_categoria(cat):
-    try:
-        res = supabase.table("app_servicos_detalhes").select("*").eq("categoria", cat).execute()
-        if res.data:
-            return res.data
-    except Exception:
-        pass
+    dados = executar_select_direto("app_servicos_detalhes", f"?select=categoria,nome_detalhado,preco&categoria=eq.{cat}")
+    if dados and not isinstance(dados, dict):
+        return dados
     
     dados_locais = {
         "Elétrica": [{"nome_detalhado": "Instalação de chuveiro elétrico 220 V", "preco": 150.00}],
@@ -66,10 +84,7 @@ def registrar_ligacao(cliente, profissional, atendeu):
         "horario": datetime.datetime.now().isoformat(),
         "atendido": atendeu
     }
-    try:
-        supabase.table("app_servicos_logs_ligacoes").insert(dados).execute()
-    except Exception:
-        pass
+    executar_insert_direto("app_servicos_logs_ligacoes", dados)
 
 # --- MENU LATERAL (NAVEGAÇÃO) ---
 st.sidebar.title("🛠️ Central de Serviços")
@@ -82,6 +97,7 @@ else:
         menu = st.sidebar.radio("Painel Admin", ["Gerenciar Serviços/Preços", "Cadastrar Profissional", "Ver Logs de Ligações"])
     else:
         dados_cli = st.session_state['cliente_dados']
+        # Desempacota com segurança a estrutura se ela vier envelopada em array
         cliente_info_topo = dados_cli[0] if isinstance(dados_cli, list) and len(dados_cli) > 0 else (dados_cli if dados_cli else {})
         st.sidebar.success(f"Cliente: {cliente_info_topo.get('nome_completo', 'Usuário')}")
         menu = st.sidebar.radio("Painel Cliente", ["Buscar Serviços", "Meus Dados"])
@@ -97,6 +113,7 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("📢 Suporte & Reclamações")
 st.sidebar.write("Fale com o Administrador:")
 st.sidebar.info("📧 contato@pratti.com\n\n📞 (11) 99999-9999")
+
 
 # --- TELAS DO SISTEMA: 1. ÁREA ADMINISTRATIVA ---
 if menu == "Área Administrativa" and not st.session_state["user_logged"]:
