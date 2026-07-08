@@ -24,38 +24,43 @@ if "categoria_ativa" not in st.session_state:
     st.session_state["categoria_ativa"] = None
 
 
-# --- FUNÇÕES DE BANCO POR HTTP BRUTO (Garante rota absoluta contra desvios) ---
+# --- FUNÇÕES DE BANCO POR HTTP BRUTO (Tratamento definitivo de rotas e nomes) ---
 def executar_select_direto(tabela, parametros=""):
-    try:
-        url_api = f"{URL_PROJETO_REAL}/rest/v1/{tabela}{parametros}"
-        headers = {
-            "apikey": CHAVE_PROJETO_REAL,
-            "Authorization": f"Bearer {CHAVE_PROJETO_REAL}",
-            "Content-Type": "application/json"
-        }
-        resposta = requests.get(url_api, headers=headers)
-        if resposta.status_code == 200:
-            return resposta.json()
-    except Exception:
-        pass
+    for nome_tabela in [tabela, tabela.lower(), tabela.capitalize()]:
+        try:
+            url_api = f"{URL_PROJETO_REAL}/rest/v1/{nome_tabela}{parametros}"
+            headers = {
+                "apikey": CHAVE_PROJETO_REAL,
+                "Authorization": f"Bearer {CHAVE_PROJETO_REAL}",
+                "Content-Type": "application/json"
+            }
+            resposta = requests.get(url_api, headers=headers)
+            if resposta.status_code == 200:
+                return resposta.json()
+        except Exception:
+            pass
     return None
 
 def executar_insert_direto(tabela, dados):
-    try:
-        url_api = f"{URL_PROJETO_REAL}/rest/v1/{tabela}"
-        headers = {
-            "apikey": CHAVE_PROJETO_REAL,
-            "Authorization": f"Bearer {CHAVE_PROJETO_REAL}",
-            "Content-Type": "application/json"
-        }
-        # Inserção pura via POST sem cabeçalhos de retorno complexos que confundem o gateway
-        resposta = requests.post(url_api, headers=headers, json=dados)
-        if 200 <= resposta.status_code < 300:
-            return {"sucesso": True, "detalhes": ""}
-        else:
-            return {"sucesso": False, "detalhes": f"Status {resposta.status_code}"}
-    except Exception as e:
-        return {"sucesso": False, "detalhes": str(e)}
+    erros_acumulados = []
+    # Tenta variações de nomes caso a tabela tenha sido criada com maiúsculas no banco
+    for nome_tabela in [tabela, tabela.lower(), tabela.capitalize()]:
+        try:
+            url_api = f"{URL_PROJETO_REAL}/rest/v1/{nome_tabela}"
+            headers = {
+                "apikey": CHAVE_PROJETO_REAL,
+                "Authorization": f"Bearer {CHAVE_PROJETO_REAL}",
+                "Content-Type": "application/json"
+            }
+            resposta = requests.post(url_api, headers=headers, json=dados)
+            if 200 <= resposta.status_code < 300:
+                return {"sucesso": True, "detalhes": ""}
+            else:
+                erros_acumulados.append(f"Tabela '{nome_tabela}': Status {resposta.status_code} - {resposta.text}")
+        except Exception as e:
+            erros_acumulados.append(str(e))
+            
+    return {"sucesso": False, "detalhes": " | ".join(erros_acumulados)}
 
 def buscar_categorias():
     dados = executar_select_direto("app_servicos_detalhes", "?select=categoria")
@@ -97,7 +102,6 @@ else:
         menu = st.sidebar.radio("Painel Admin", ["Gerenciar Serviços/Preços", "Cadastrar Profissional", "Ver Logs de Ligações"])
     else:
         dados_cli = st.session_state['cliente_dados']
-        # Desempacota com segurança a estrutura se ela vier envelopada em array
         cliente_info_topo = dados_cli[0] if isinstance(dados_cli, list) and len(dados_cli) > 0 else (dados_cli if dados_cli else {})
         st.sidebar.success(f"Cliente: {cliente_info_topo.get('nome_completo', 'Usuário')}")
         menu = st.sidebar.radio("Painel Cliente", ["Buscar Serviços", "Meus Dados"])
@@ -113,6 +117,7 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("📢 Suporte & Reclamações")
 st.sidebar.write("Fale com o Administrador:")
 st.sidebar.info("📧 contato@pratti.com\n\n📞 (11) 99999-9999")
+
 
 
 # --- TELAS DO SISTEMA: 1. ÁREA ADMINISTRATIVA ---
@@ -149,6 +154,7 @@ elif menu == "Gerenciar Serviços/Preços":
                 st.rerun()
             else:
                 st.error("Erro interno ao tentar salvar dados no banco.")
+                st.code(retorno["detalhes"])
             
     st.subheader("Tabela de Preços Cadastrados")
     dados_tabela = executar_select_direto("app_servicos_detalhes", "?select=categoria,nome_detalhado,preco")
@@ -177,6 +183,7 @@ elif menu == "Cadastrar Profissional":
                 st.success("Profissional cadastrado com sucesso!")
             else:
                 st.error("Falha ao salvar profissional no banco de dados.")
+                st.code(retorno["detalhes"])
 
 elif menu == "Ver Logs de Ligações":
     st.title("📊 Histórico de Ligações Registradas")
@@ -220,7 +227,8 @@ elif menu == "Área do Cliente" and not st.session_state["user_logged"]:
                     if retorno["sucesso"]:
                         st.success("Cadastro efetuado com sucesso! Faça o login na aba ao lado.")
                     else:
-                        st.error(f"Erro ao salvar cadastro: {retorno['detalhes']}")
+                        st.error("O banco de dados recusou a gravação do registro.")
+                        st.code(retorno["detalhes"])
 
 # --- TELAS DO SISTEMA: 3. PAINEL DO CLIENTE LOGADO ---
 elif menu == "Buscar Serviços":
