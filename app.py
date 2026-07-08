@@ -35,58 +35,24 @@ if "cliente_dados" not in st.session_state:
 if "categoria_ativa" not in st.session_state:
     st.session_state["categoria_ativa"] = None
 
-# --- LÓGICA DAS FUNÇÕES DO BANCO POR HTTP DIRETO ---
-def executar_select_direto(tabela, parametros=""):
+# --- LÓGICA DAS FUNÇÕES DO BANCO (Utilizando o Cliente Oficial do Supabase) ---
+def buscar_categorias():
     try:
-        url_api = f"{URL_PROJETO}/rest/v1/{tabela}{parametros}"
-        headers = {
-            "apikey": st.secrets["KEY_SUPABASE"].strip(),
-            "Authorization": f"Bearer {st.secrets['KEY_SUPABASE'].strip()}",
-            "Content-Type": "application/json"
-        }
-        resposta = requests.get(url_api, headers=headers)
-        if resposta.status_code == 200:
-            return resposta.json()
+        res = supabase.table("app_servicos_detalhes").select("categoria").execute()
+        if res.data:
+            return list(set([item['categoria'] for item in res.data if 'categoria' in item]))
     except Exception:
         pass
-    return None
-
-def executar_insert_direto(tabela, dados):
-    try:
-        url_api = f"{URL_PROJETO}/rest/v1/{tabela}"
-        headers = {
-            "apikey": st.secrets["KEY_SUPABASE"].strip(),
-            "Authorization": f"Bearer {st.secrets['KEY_SUPABASE'].strip()}",
-            "Content-Type": "application/json",
-            "Prefer": "return=minimal"
-        }
-        resposta = requests.post(url_api, headers=headers, json=dados)
-        if 200 <= resposta.status_code < 300:
-            return {"sucesso": True, "detalhes": ""}
-        else:
-            return {"sucesso": False, "detalhes": f"Status {resposta.status_code} - {resposta.text}"}
-    except Exception as e:
-        return {"sucesso": False, "detalhes": str(e)}
-
-def buscar_categorias():
-    dados = executar_select_direto("app_servicos_detalhes", "?select=categoria")
-    if dados and not isinstance(dados, dict):
-        categorias = list(set([item['categoria'] for item in dados if 'categoria' in item]))
-        if categorias:
-            return categorias
     return ["Elétrica", "Hidráulica", "Pintura"]
 
 def buscar_servicos_por_categoria(cat):
-    dados = executar_select_direto("app_servicos_detalhes", f"?select=categoria,nome_detalhado,preco&categoria=eq.{cat}")
-    if dados and not isinstance(dados, dict):
-        return dados
-    
-    dados_locais = {
-        "Elétrica": [{"nome_detalhado": "Instalação de chuveiro elétrico 220 V", "preco": 150.00}],
-        "Hidráulica": [{"nome_detalhado": "Conserto de vazamento em torneira", "preco": 80.00}],
-        "Pintura": [{"nome_detalhado": "Pintura de parede (m²)", "preco": 45.00}]
-    }
-    return dados_locais.get(cat, [])
+    try:
+        res = supabase.table("app_servicos_detalhes").select("*").eq("categoria", cat).execute()
+        if res.data:
+            return res.data
+    except Exception:
+        pass
+    return []
 
 def registrar_ligacao(cliente, profissional, atendeu):
     dados = {
@@ -95,8 +61,9 @@ def registrar_ligacao(cliente, profissional, atendeu):
         "horario": datetime.datetime.now().isoformat(),
         "atendido": atendeu
     }
-    retorno = executar_insert_direto("app_servicos_logs_ligacoes", dados)
-    if not retorno["sucesso"]:
+    try:
+        supabase.table("app_servicos_logs_ligacoes").insert(dados).execute()
+    except Exception:
         st.info(f"📌 [Modo Local] Ligação para {profissional} registrada na tela.")
 
 # --- MENU LATERAL (NAVEGAÇÃO) ---
@@ -109,9 +76,10 @@ else:
         st.sidebar.success("Conectado como: PRATTI")
         menu = st.sidebar.radio("Painel Admin", ["Gerenciar Serviços/Preços", "Cadastrar Profissional", "Ver Logs de Ligações"])
     else:
-        dados_cliente_topo = st.session_state['cliente_dados']
-        nome_exibir = dados_cliente_topo.get('nome_completo', 'Usuário') if isinstance(dados_cliente_topo, dict) else "Usuário"
-        st.sidebar.success(f"Cliente: {nome_exibir}")
+        # Tratamento seguro caso os dados do cliente venham como uma lista de um único item
+        dados_cli = st.session_state['cliente_dados']
+        cliente_info = dados_cli[0] if isinstance(dados_cli, list) and len(dados_cli) > 0 else dados_cli
+        st.sidebar.success(f"Cliente: {cliente_info.get('nome_completo', 'Usuário')}")
         menu = st.sidebar.radio("Painel Cliente", ["Buscar Serviços", "Meus Dados"])
     
     if st.sidebar.button("Sair / Logout"):
@@ -125,6 +93,7 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("📢 Suporte & Reclamações")
 st.sidebar.write("Fale com o Administrador:")
 st.sidebar.info("📧 contato@pratti.com\n\n📞 (11) 99999-9999")
+
 
 # --- TELAS DO SISTEMA: 1. ÁREA ADMINISTRATIVA ---
 if menu == "Área Administrativa" and not st.session_state["user_logged"]:
@@ -150,23 +119,26 @@ elif menu == "Gerenciar Serviços/Preços":
     
     if st.button("Salvar Serviço"):
         if nova_cat and novo_serv:
-            retorno = executar_insert_direto("app_servicos_detalhes", {
-                "categoria": nova_cat.strip().capitalize(),
-                "nome_detalhado": novo_serv.strip(),
-                "preco": novo_preco
-            })
-            if retorno["sucesso"]:
+            try:
+                supabase.table("app_servicos_detalhes").insert({
+                    "categoria": nova_cat.strip().capitalize(),
+                    "nome_detalhado": novo_serv.strip(),
+                    "preco": novo_preco
+                }).execute()
                 st.success(f"Botão/Serviço '{nova_cat}' adicionado com sucesso!")
                 st.rerun()
-            else:
-                st.error("Erro técnico (401) ao salvar dados. Verifique a KEY_SUPABASE.")
+            except Exception as e:
+                st.error(f"Erro ao salvar no banco: {e}")
             
     st.subheader("Tabela de Preços Cadastrados")
-    dados_tabela = executar_select_direto("app_servicos_detalhes", "?select=categoria,nome_detalhado,preco")
-    if dados_tabela and not isinstance(dados_tabela, dict):
-        st.dataframe(dados_tabela, use_container_width=True)
-    else:
-        st.info("Nenhum preço listado ou chave de API inválida (Verifique se a KEY_SUPABASE do seu painel está atualizada).")
+    try:
+        res = supabase.table("app_servicos_detalhes").select("*").execute()
+        if res.data:
+            st.dataframe(res.data, use_container_width=True)
+        else:
+            st.info("Nenhum preço cadastrado no banco de dados.")
+    except Exception as e:
+        st.error(f"Erro ao ler tabela: {e}")
 
 elif menu == "Cadastrar Profissional":
     st.title("👨‍🔧 Cadastrar Novo Profissional")
@@ -178,24 +150,27 @@ elif menu == "Cadastrar Profissional":
     
     if st.button("Cadastrar Profissional"):
         if nome and localidade and telefone:
-            retorno = executar_insert_direto("app_servicos_profissionais", {
-                "nome": nome,
-                "servico_principal": serv_principal,
-                "localidade": localidade,
-                "telefone": telefone
-            })
-            if retorno["sucesso"]:
+            try:
+                supabase.table("app_servicos_profissionais").insert({
+                    "nome": nome,
+                    "servico_principal": serv_principal,
+                    "localidade": localidade,
+                    "telefone": telefone
+                }).execute()
                 st.success("Profissional cadastrado com sucesso!")
-            else:
-                st.error("Falha ao salvar profissional. Verifique a KEY_SUPABASE.")
+            except Exception as e:
+                st.error(f"Erro ao cadastrar profissional: {e}")
 
 elif menu == "Ver Logs de Ligações":
     st.title("📊 Histórico de Ligações Registradas")
-    dados_logs = executar_select_direto("app_servicos_logs_ligacoes", "?select=cliente_nome,profissional_nome,horario,atendido&order=horario.desc")
-    if dados_logs and not isinstance(dados_logs, dict):
-        st.dataframe(dados_logs, use_container_width=True)
-    else:
-        st.info("Nenhum log disponível ou chave de API recusada.")
+    try:
+        res = supabase.table("app_servicos_logs_ligacoes").select("*").order("horario", desc=True).execute()
+        if res.data:
+            st.dataframe(res.data, use_container_width=True)
+        else:
+            st.info("Nenhuma ligação registrada até o momento.")
+    except Exception as e:
+        st.error(f"Erro ao carregar logs: {e}")
 
 # --- TELAS DO SISTEMA: 2. ÁREA DO CLIENTE (LOGIN/CADASTRO) ---
 elif menu == "Área do Cliente" and not st.session_state["user_logged"]:
@@ -205,15 +180,18 @@ elif menu == "Área do Cliente" and not st.session_state["user_logged"]:
     with aba_login:
         tel_login = st.text_input("Digite seu Telefone WhatsApp Cadastrado", key="login_tel")
         if st.button("Entrar"):
-            dados_cli = executar_select_direto("app_servicos_clientes", f"?select=nome_completo,endereco,whatsapp&whatsapp=eq.{tel_login}")
-            if dados_cli and not isinstance(dados_cli, dict) and len(dados_cli) > 0:
-                st.session_state["user_logged"] = True
-                st.session_state["user_type"] = "cliente"
-                st.session_state["cliente_dados"] = dados_cli[0] if isinstance(dados_cli, list) else dados_cli
-                st.success(f"Bem-vindo de volta, {st.session_state['cliente_dados']['nome_completo']}!")
-                st.rerun()
-            else:
-                st.error("Telefone não encontrado ou erro de autenticação do servidor (401).")
+            try:
+                res = supabase.table("app_servicos_clientes").select("*").eq("whatsapp", tel_login).execute()
+                if res.data and len(res.data) > 0:
+                    st.session_state["user_logged"] = True
+                    st.session_state["user_type"] = "cliente"
+                    st.session_state["cliente_dados"] = res.data
+                    st.success("Login efetuado com sucesso!")
+                    st.rerun()
+                else:
+                    st.error("Telefone não encontrado. Cadastre-se na aba ao lado.")
+            except Exception as e:
+                st.error(f"Erro no login: {e}")
                 
     with aba_cadastro:
         nome_c = st.text_input("Nome Completo")
@@ -222,22 +200,22 @@ elif menu == "Área do Cliente" and not st.session_state["user_logged"]:
         
         if st.button("Concluir Cadastro"):
             if nome_c and endereco_c and whats_c:
-                res_check = executar_select_direto("app_servicos_clientes", f"?select=whatsapp&whatsapp=eq.{whats_c}")
-                if res_check and not isinstance(res_check, dict) and len(res_check) > 0:
-                    st.warning("Este telefone já está cadastrado.")
-                else:
-                    novo_cli = {"nome_completo": nome_c, "endereco": endereco_c, "whatsapp": whats_c}
-                    retorno = executar_insert_direto("app_servicos_clientes", novo_cli)
-                    if retorno["sucesso"]:
-                        st.success("Cadastro efetuado! Faça o login na aba ao lado.")
+                try:
+                    res_check = supabase.table("app_servicos_clientes").select("*").eq("whatsapp", whats_c).execute()
+                    if res_check.data and len(res_check.data) > 0:
+                        st.warning("Este telefone já está cadastrado.")
                     else:
-                        st.error("O banco de dados recusou a gravação devido a chaves inválidas (Erro 401).")
-                        st.info("⚠️ Ajuste necessário: Verifique se a KEY_SUPABASE no painel do Streamlit pertence a este projeto atual (lfgqxphittdatzknwkqw).")
+                        novo_cli = {"nome_completo": nome_c, "endereco": endereco_c, "whatsapp": whats_c}
+                        supabase.table("app_servicos_clientes").insert(novo_cli).execute()
+                        st.success("Cadastro efetuado! Faça o login na aba ao lado.")
+                except Exception as e:
+                    st.error(f"Erro ao processar cadastro: {e}")
 
 # --- TELAS DO SISTEMA: 3. PAINEL DO CLIENTE LOGADO ---
 elif menu == "Buscar Serviços":
-    dados_cliente_busca = st.session_state['cliente_dados']
-    st.title(f"Olá, {dados_cliente_busca.get('nome_completo', 'Cliente')}! Do que precisa hoje?")
+    dados_cli = st.session_state['cliente_dados']
+    cliente_info = dados_cli[0] if isinstance(dados_cli, list) and len(dados_cli) > 0 else dados_cli
+    st.title(f"Olá, {cliente_info.get('nome_completo', 'Cliente')}! Do que precisa hoje?")
     categorias = buscar_categorias()
     st.subheader("Selecione a categoria do serviço:")
     
@@ -264,31 +242,35 @@ elif menu == "Buscar Serviços":
             st.info("Nenhum preço detalhado fixado para esta categoria ainda.")
             opcao_servico = cat_ativa
 
-        st.markdown("#### 🧔 Profissionais Disponíveis na sua Área:")
-        profissionais_falsos = [{"id": 1, "nome": "Carlos Silva", "localidade": "Centro", "telefone": "11999999999"}]
+        st.markdown("#### 🛠️ Profissionais Disponíveis na sua Área:")
+        try:
+            res_prof = supabase.table("app_servicos_profissionais").select("*").eq("servico_principal", cat_ativa).execute()
+            lista_prof = res_prof.data if res_prof.data else []
+        except Exception:
+            lista_prof = []
         
-        lista_prof = executar_select_direto("app_servicos_profissionais", f"?select=nome,localidade,telefone&servico_principal=eq.{cat_ativa}")
-        if not lista_prof or isinstance(lista_prof, dict):
-            lista_prof = profissionais_falsos
-        
-        for idx_p, prof_item in enumerate(lista_prof):
-            with st.container(border=True):
-                st.write(f"**Nome:** {prof_item['nome']}")
-                st.write(f"📍 **Localidade:** {prof_item['localidade']}")
-                st.write("Para falar com o profissional, use os botões abaixo:")
-                c1, c2 = st.columns(2)
-                
-                if c1.button(f"📞 Ligar para {prof_item['nome']}", key=f"ligar_{idx_p}"):
-                    registrar_ligacao(dados_cliente_busca.get('nome_completo', 'Cliente'), prof_item["nome"], True)
-                    st.success(f"Ligação registrada! Contato: {prof_item['telefone']}")
+        if lista_prof:
+            for idx_p, prof_item in enumerate(lista_prof):
+                with st.container(border=True):
+                    st.write(f"**Nome:** {prof_item['nome']}")
+                    st.write(f"📍 **Localidade:** {prof_item['localidade']}")
+                    st.write("Para falar com o profissional, use os botões abaixo:")
+                    c1, c2 = st.columns(2)
                     
-                if c2.button(f"❌ Chamei mas não atendeu", key=f"nao_atendeu_{idx_p}"):
-                    registrar_ligacao(dados_cliente_busca.get('nome_completo', 'Cliente'), prof_item["nome"], False)
-                    st.warning(f"Tentativa de contato sem sucesso registrada.")
+                    if c1.button(f"📞 Ligar para {prof_item['nome']}", key=f"ligar_{idx_p}"):
+                        registrar_ligacao(cliente_info.get('nome_completo', 'Cliente'), prof_item["nome"], True)
+                        st.success(f"Ligação registrada! Contato: {prof_item['telefone']}")
+                        
+                    if c2.button(f"❌ Chamei mas não atendeu", key=f"nao_atendeu_{idx_p}"):
+                        registrar_ligacao(cliente_info.get('nome_completo', 'Cliente'), prof_item["nome"], False)
+                        st.warning(f"Tentativa de contato sem sucesso registrada.")
+        else:
+            st.info("Nenhum profissional cadastrado para esta categoria ainda.")
 
 elif menu == "Meus Dados":
-    dados_cliente_perfil = st.session_state['cliente_dados']
+    dados_cli = st.session_state['cliente_dados']
+    cliente_info = dados_cli[0] if isinstance(dados_cli, list) and len(dados_cli) > 0 else dados_cli
     st.title("👤 Meus Dados de Cadastro")
-    st.write(f"**Nome:** {dados_cliente_perfil.get('nome_completo', '')}")
-    st.write(f"**Endereço de Atendimento:** {dados_cliente_perfil.get('endereco', '')}")
-    st.write(f"**WhatsApp:** {dados_cliente_perfil.get('whatsapp', '')}")
+    st.write(f"**Nome:** {cliente_info.get('nome_completo', '')}")
+    st.write(f"**Endereço de Atendimento:** {cliente_info.get('endereco', '')}")
+    st.write(f"**WhatsApp:** {cliente_info.get('whatsapp', '')}")
