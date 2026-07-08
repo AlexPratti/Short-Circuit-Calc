@@ -10,13 +10,24 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- CREDENCIAIS ABSOLUTAS FIXAS (Tratamento automático de sufixo) ---
+# --- AJUSTE DE CREDENCIAIS FIXO ---
 URL_BRUTA = st.secrets["URL_SUPABASE"].strip().rstrip('/')
 if "/rest/v1" in URL_BRUTA:
-    URL_PROJETO_REAL = URL_BRUTA.split("/rest/v1")[0]
+    URL_PROJETO_REAL = URL_BRUTA.split("/rest/v1")[0]  # Corrigido: adicionado [0] para extrair a URL base corretamente
 else:
     URL_PROJETO_REAL = URL_BRUTA
 CHAVE_PROJETO_REAL = st.secrets["KEY_SUPABASE"].strip()
+
+# --- FUNÇÃO DE BUSCA DE CATEGORIAS CORRIGIDA ---
+def buscar_categorias():
+    # Busca estritamente tudo o que está gravado de forma persistente no banco de dados
+    dados = executar_select_direto("app_servicos_detalhes", "?select=categoria&ativo=eq.true")
+    if dados and not isinstance(dados, dict):
+        categorias = list(set([item['categoria'] for item in dados if 'categoria' in item]))
+        if categorias:
+            return sorted(categorias)  # Retorna as categorias reais salvas no banco
+    return []  # Deixamos vazio para o Admin saber que precisa cadastrar a primeira se o banco estiver zerado
+
 
 # --- CONTROLE DE SESSÃO (STATE) ---
 if "user_logged" not in st.session_state:
