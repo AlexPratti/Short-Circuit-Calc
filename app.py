@@ -61,29 +61,39 @@ def executar_select_direto(tabela, parametros=""):
 def executar_insert_direto(tabela, dados):
     try:
         url_base = st.secrets["URL_SUPABASE"].strip().rstrip('/')
+        
+        # Correção da Rota do Supabase: Garante que o sufixo /rest/v1 exista de forma correta
         if "/rest/v1" not in url_base:
+            # Se a URL fornecida for apenas o domínio, adiciona obrigatoriamente a rota da API Rest
             url_api = f"{url_base}/rest/v1/{tabela}"
         else:
+            # Caso a URL já possua o sufixo, evita a duplicidade de rota que gera o erro 404
             url_api = f"{url_base}/{tabela}"
-        
+            
         headers = {
             "apikey": st.secrets["KEY_SUPABASE"].strip(),
             "Authorization": f"Bearer {st.secrets['KEY_SUPABASE'].strip()}",
             "Content-Type": "application/json",
-            "Prefer": "return=representation"
+            "Prefer": "return=minimal" # Mudado para minimal para evitar conflito de serialização no POST
         }
         
         resposta = requests.post(url_api, headers=headers, json=dados)
+        
+        # Se der erro 404 (Rota Inválida), tenta automaticamente o caminho alternativo absoluto
+        if resposta.status_code == 404 and "/rest/v1" not in url_base:
+            url_api_alternativa = f"{url_base}/{tabela}"
+            resposta = requests.post(url_api_alternativa, headers=headers, json=dados)
+            
         if 200 <= resposta.status_code < 300:
             return {"sucesso": True, "detalhes": ""}
         else:
-            # Em vez de omitir, vamos estourar o erro técnico na tela do usuário para leitura
             st.error(f"Erro reportado pelo banco PostgreSQL (Status {resposta.status_code}):")
-            st.code(resposta.text) # <-- Exibe a mensagem de rejeição do Supabase
+            st.code(resposta.text)
             return {"sucesso": False, "detalhes": resposta.text}
     except Exception as e:
         st.exception(e)
         return {"sucesso": False, "detalhes": str(e)}
+
 
 
 def buscar_categorias():
