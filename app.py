@@ -35,11 +35,15 @@ if "categoria_ativa" not in st.session_state:
     st.session_state["categoria_ativa"] = None
 
 
-# --- LÓGICA DAS FUNÇÕES DO BANCO (Conexão Direta HTTP contra Bugs de Rota) ---
+# --- LÓGICA DAS FUNÇÕES DO BANCO (Conexão Direta e Absoluta contra Erro 404/HTML) ---
 def executar_select_direto(tabela, parametros=""):
     try:
         url_base = st.secrets["URL_SUPABASE"].strip().rstrip('/')
-        url_api = f"{url_base}/rest/v1/{tabela}{parametros}"
+        # Garante o roteamento absoluto correto para a API PostgREST
+        if "/rest/v1" not in url_base:
+            url_api = f"{url_base}/rest/v1/{tabela}{parametros}"
+        else:
+            url_api = f"{url_base}/{tabela}{parametros}"
         
         headers = {
             "apikey": st.secrets["KEY_SUPABASE"].strip(),
@@ -57,7 +61,11 @@ def executar_select_direto(tabela, parametros=""):
 def executar_insert_direto(tabela, dados):
     try:
         url_base = st.secrets["URL_SUPABASE"].strip().rstrip('/')
-        url_api = f"{url_base}/rest/v1/{tabela}"
+        # Garante o roteamento absoluto correto para a API PostgREST no método POST
+        if "/rest/v1" not in url_base:
+            url_api = f"{url_base}/rest/v1/{tabela}"
+        else:
+            url_api = f"{url_base}/{tabela}"
         
         headers = {
             "apikey": st.secrets["KEY_SUPABASE"].strip(),
@@ -67,7 +75,6 @@ def executar_insert_direto(tabela, dados):
         }
         
         resposta = requests.post(url_api, headers=headers, json=dados)
-        # Qualquer código da família 200 (200, 201, 204) indica sucesso na inserção
         if 200 <= resposta.status_code < 300:
             return {"sucesso": True, "detalhes": ""}
         else:
@@ -116,7 +123,9 @@ else:
         st.sidebar.success("Conectado como: PRATTI")
         menu = st.sidebar.radio("Painel Admin", ["Gerenciar Serviços/Preços", "Cadastrar Profissional", "Ver Logs de Ligações"])
     else:
-        st.sidebar.success(f"Cliente: {st.session_state['cliente_dados']['nome_completo']}")
+        # Tratamento defensivo para evitar falha se o cliente vier mapeado dentro de uma lista
+        dados_cliente_topo = st.session_state['cliente_dados'][0] if isinstance(st.session_state['cliente_dados'], list) else st.session_state['cliente_dados']
+        st.sidebar.success(f"Cliente: {dados_cliente_topo.get('nome_completo', 'Usuário')}")
         menu = st.sidebar.radio("Painel Cliente", ["Buscar Serviços", "Meus Dados"])
     
     if st.sidebar.button("Sair / Logout"):
@@ -130,7 +139,6 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("📢 Suporte & Reclamações")
 st.sidebar.write("Fale com o Administrador:")
 st.sidebar.info("📧 contato@pratti.com\n\n📞 (11) 99999-9999")
-
 
 
 
@@ -168,7 +176,6 @@ elif menu == "Gerenciar Serviços/Preços":
                 st.rerun()
             else:
                 st.error("Erro ao salvar serviço no banco de dados.")
-                st.code(retorno["detalhes"])
             
     st.subheader("Tabela de Preços Cadastrados")
     
@@ -198,7 +205,6 @@ elif menu == "Cadastrar Profissional":
                 st.success("Profissional cadastrado com sucesso!")
             else:
                 st.error("Erro ao cadastrar profissional no banco de dados.")
-                st.code(retorno["detalhes"])
 
 elif menu == "Ver Logs de Ligações":
     st.title("📊 Histórico de Ligações Registradas")
@@ -220,8 +226,7 @@ elif menu == "Área do Cliente" and not st.session_state["user_logged"]:
             if dados_cli and len(dados_cli) > 0:
                 st.session_state["user_logged"] = True
                 st.session_state["user_type"] = "cliente"
-                # Correção estrutural: extrai o primeiro dicionário da lista de resposta
-                st.session_state["cliente_dados"] = dados_cli[0]
+                st.session_state["cliente_dados"] = dados_cli[0] if isinstance(dados_cli, list) else dados_cli
                 st.success(f"Bem-vindo de volta, {st.session_state['cliente_dados']['nome_completo']}!")
                 st.rerun()
             else:
@@ -244,12 +249,11 @@ elif menu == "Área do Cliente" and not st.session_state["user_logged"]:
                         st.success("Cadastro efetuado! Faça o login na aba ao lado.")
                     else:
                         st.error("Erro interno no servidor ao processar o cadastro.")
-                        # Esta linha vai desenhar uma caixa preta com a mensagem real do banco de dados na tela
-                        st.code(retorno["detalhes"])
 
 # --- TELAS DO SISTEMA: 3. PAINEL DO CLIENTE LOGADO (BUSCA DINÂMICA) ---
 elif menu == "Buscar Serviços":
-    st.title(f"Olá, {st.session_state['cliente_dados']['nome_completo']}! Do que precisa hoje?")
+    dados_cliente_busca = st.session_state['cliente_dados'][0] if isinstance(st.session_state['cliente_dados'], list) else st.session_state['cliente_dados']
+    st.title(f"Olá, {dados_cliente_busca.get('nome_completo', 'Cliente')}! Do que precisa hoje?")
     categorias = buscar_categorias()
     st.subheader("Selecione a categoria do serviço:")
     
@@ -295,7 +299,7 @@ elif menu == "Buscar Serviços":
                 
                 if c1.button(f"📞 Ligar para {prof_item['nome']}", key=f"ligar_{idx_p}"):
                     registrar_ligacao(
-                        cliente=st.session_state["cliente_dados"]["nome_completo"],
+                        cliente=dados_cliente_busca.get('nome_completo', 'Cliente'),
                         profissional=prof_item["nome"],
                         atendido=True
                     )
@@ -303,14 +307,15 @@ elif menu == "Buscar Serviços":
                     
                 if c2.button(f"❌ Chamei mas não atendeu", key=f"nao_atendeu_{idx_p}"):
                     registrar_ligacao(
-                        cliente=st.session_state["cliente_dados"]["nome_completo"],
+                        cliente=dados_cliente_busca.get('nome_completo', 'Cliente'),
                         profissional=prof_item["nome"],
                         atendido=False
                     )
                     st.warning(f"Tentativa de contato sem sucesso registrada.")
 
 elif menu == "Meus Dados":
+    dados_cliente_perfil = st.session_state['cliente_dados'][0] if isinstance(st.session_state['cliente_dados'], list) else st.session_state['cliente_dados']
     st.title("👤 Meus Dados de Cadastro")
-    st.write(f"**Nome:** {st.session_state['cliente_dados']['nome_completo']}")
-    st.write(f"**Endereço de Atendimento:** {st.session_state['cliente_dados']['endereco']}")
-    st.write(f"**WhatsApp:** {st.session_state['cliente_dados']['whatsapp']}")
+    st.write(f"**Nome:** {dados_cliente_perfil.get('nome_completo', '')}")
+    st.write(f"**Endereço de Atendimento:** {dados_cliente_perfil.get('endereco', '')}")
+    st.write(f"**WhatsApp:** {dados_cliente_perfil.get('whatsapp', '')}")
