@@ -197,19 +197,15 @@ elif menu == "Área do Cliente" and not st.session_state["user_logged"]:
     with aba_login:
         tel_login = st.text_input("Digite seu Telefone WhatsApp Cadastrado", key="login_tel")
         if st.button("Entrar"):
-            # Faz a busca exata removendo espaços do campo
             dados_cli = executar_select_direto("app_servicos_clientes", f"?select=nome_completo,endereco,whatsapp&whatsapp=eq.{tel_login.strip()}")
-            
             if dados_cli and isinstance(dados_cli, list) and len(dados_cli) > 0:
                 st.session_state["user_logged"] = True
                 st.session_state["user_type"] = "cliente"
-                # CORREÇÃO CRUCIAL: Extrai o primeiro dicionário da lista de resposta
                 st.session_state["cliente_dados"] = dados_cli[0]
                 st.success("Login efetuado com sucesso!")
                 st.rerun()
             else:
                 st.error("Telefone não encontrado nas tabelas do sistema.")
-                # Exibe o que o banco de dados retornou para checagem visual
                 st.info(f"Retorno do Banco para o número '{tel_login}': {str(dados_cli)}")
 
     with aba_cadastro:
@@ -233,7 +229,6 @@ elif menu == "Área do Cliente" and not st.session_state["user_logged"]:
 # --- TELAS DO SISTEMA: 3. PAINEL DO CLIENTE LOGADO ---
 elif menu == "Buscar Serviços":
     cliente_info_busca = st.session_state['cliente_dados'] if st.session_state['cliente_dados'] else {}
-    
     st.title(f"Olá, {cliente_info_busca.get('nome_completo', 'Cliente')}! Do que precisa hoje?")
     categorias = buscar_categorias()
     st.subheader("Selecione a categoria do serviço:")
@@ -272,20 +267,24 @@ elif menu == "Buscar Serviços":
             with st.container(border=True):
                 st.write(f"**Nome:** {prof_item['nome']}")
                 st.write(f"📍 **Localidade:** {prof_item['localidade']}")
+                st.write(f"📞 **WhatsApp:** {prof_item['telefone']}")
                 st.write("Para falar com o profissional, use os botões abaixo:")
                 c1, c2 = st.columns(2)
                 
-                if c1.button(f"📞 Ligar para {prof_item['nome']}", key=f"ligar_{idx_p}"):
+                tel_limpo = "".join(filter(str.isdigit, prof_item['telefone']))
+                link_discador = f'<a href="tel:{tel_limpo}" target="_blank" style="text-decoration: none;"><button style="width: 100%; background-color: #25D366; color: white; border: none; padding: 0.5rem; border-radius: 4px; cursor: pointer; font-weight: bold;">📞 Discar para {prof_item["nome"]}</button></a>'
+                c1.markdown(link_discador, unsafe_allow_html=True)
+                
+                if c1.button("📌 Registrar que Liguei", key=f"log_ligar_{idx_p}"):
                     registrar_ligacao(cliente_info_busca.get('nome_completo', 'Cliente'), prof_item["nome"], True)
-                    st.success(f"Ligação registrada! Contato: {prof_item['telefone']}")
+                    st.success("Ligação registrada no histórico do sistema!")
                     
-                if c2.button(f"❌ Chamei mas não atendeu", key=f"nao_atendeu_{idx_p}"):
+                if c2.button("❌ Chamei mas não atendeu", key=f"nao_atendeu_{idx_p}"):
                     registrar_ligacao(cliente_info_busca.get('nome_completo', 'Cliente'), prof_item["nome"], False)
-                    st.warning(f"Tentativa de contato sem sucesso registrada.")
+                    st.warning("Tentativa de contato sem sucesso registrada.")
 
 elif menu == "Meus Dados":
     cliente_info_perfil = st.session_state['cliente_dados'] if st.session_state['cliente_dados'] else {}
-    
     st.title("👤 Meus Dados de Cadastro")
     st.write(f"**Nome:** {cliente_info_perfil.get('nome_completo', '')}")
     st.write(f"**Endereço de Atendimento:** {cliente_info_perfil.get('endereco', '')}")
