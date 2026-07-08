@@ -1,22 +1,21 @@
 import streamlit as st
 import datetime
 import requests
+import urllib.parse
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(
-    page_title="App de Serviços Prediais", 
-    layout="wide", 
+    page_title="App de Serviços Prediais",
+    layout="wide",
     initial_sidebar_state="expanded"
 )
 
 # --- CREDENCIAIS ABSOLUTAS FIXAS (Tratamento automático de sufixo) ---
 URL_BRUTA = st.secrets["URL_SUPABASE"].strip().rstrip('/')
-# Se você colou com '/rest/v1/', o código remove temporariamente para padronizar
 if "/rest/v1" in URL_BRUTA:
     URL_PROJETO_REAL = URL_BRUTA.split("/rest/v1")[0]
 else:
     URL_PROJETO_REAL = URL_BRUTA
-
 CHAVE_PROJETO_REAL = st.secrets["KEY_SUPABASE"].strip()
 
 # --- CONTROLE DE SESSÃO (STATE) ---
@@ -29,7 +28,7 @@ if "cliente_dados" not in st.session_state:
 if "categoria_ativa" not in st.session_state:
     st.session_state["categoria_ativa"] = None
 
-# --- FUNÇÕES DE BANCO POR HTTP BRUTO (Garante rota absoluta correta) ---
+# --- FUNÇÕES DE BANCO POR HTTP BRUTO ---
 def executar_select_direto(tabela, parametros=""):
     try:
         url_api = f"{URL_PROJETO_REAL}/rest/v1/{tabela}{parametros}"
@@ -62,6 +61,22 @@ def executar_insert_direto(tabela, dados):
     except Exception as e:
         return {"sucesso": False, "detalhes": str(e)}
 
+def executar_delete_direto(tabela, parametros):
+    try:
+        url_api = f"{URL_PROJETO_REAL}/rest/v1/{tabela}{parametros}"
+        headers = {
+            "apikey": CHAVE_PROJETO_REAL,
+            "Authorization": f"Bearer {CHAVE_PROJETO_REAL}",
+            "Prefer": "return=minimal"
+        }
+        resposta = requests.delete(url_api, headers=headers)
+        if 200 <= resposta.status_code < 300:
+            return {"sucesso": True, "detalhes": ""}
+        else:
+            return {"sucesso": False, "detalhes": f"Status {resposta.status_code} - {resposta.text}"}
+    except Exception as e:
+        return {"sucesso": False, "detalhes": str(e)}
+
 def buscar_categorias():
     dados = executar_select_direto("app_servicos_detalhes", "?select=categoria")
     if dados and not isinstance(dados, dict):
@@ -74,7 +89,6 @@ def buscar_servicos_por_categoria(cat):
     dados = executar_select_direto("app_servicos_detalhes", f"?select=categoria,nome_detalhado,preco&categoria=eq.{cat}")
     if dados and not isinstance(dados, dict):
         return dados
-    
     dados_locais = {
         "Elétrica": [{"nome_detalhado": "Instalação de chuveiro elétrico 220 V", "preco": 150.00}],
         "Hidráulica": [{"nome_detalhado": "Conserto de vazamento em torneira", "preco": 80.00}],
@@ -82,36 +96,32 @@ def buscar_servicos_por_categoria(cat):
     }
     return dados_locais.get(cat, [])
 
-def registrar_ligacao(cliente, profissional, atendeu):
-    dados = {
-        "cliente_nome": cliente,
-        "profissional_nome": profissional,
-        "horario": datetime.datetime.now().isoformat(),
-        "atendido": atendeu
-    }
-    executar_insert_direto("app_servicos_logs_ligacoes", dados)
+def buscar_avaliacoes_profissional(nome_prof):
+    dados = executar_select_direto("app_servicos_logs_ligacoes", f"?select=cliente_nome,horario,motivo_feedback&profissional_nome=eq.{nome_prof}&order=horario.desc")
+    if dados and not isinstance(dados, dict):
+        return dados
+    return []
 
 # --- MENU LATERAL (NAVEGAÇÃO) ---
 st.sidebar.title("🛠️ Central de Serviços")
-
 if not st.session_state["user_logged"]:
     menu = st.sidebar.radio("Navegação", ["Área do Cliente", "Área Administrativa"])
 else:
     if st.session_state["user_type"] == "admin":
         st.sidebar.success("Conectado como: PRATTI")
-        menu = st.sidebar.radio("Painel Admin", ["Gerenciar Serviços/Preços", "Cadastrar Profissional", "Ver Logs de Ligações"])
+        menu = st.sidebar.radio("Painel Admin", ["Gerenciar Serviços/Preços", "Cadastrar Profissional", "Gerenciar Clientes", "Ver Logs de Ligações"])
     else:
         dados_cli = st.session_state['cliente_dados']
         cliente_info_topo = dados_cli if isinstance(dados_cli, dict) else (dados_cli if isinstance(dados_cli, list) else {})
         st.sidebar.success(f"Cliente: {cliente_info_topo.get('nome_completo', 'Usuário')}")
-        menu = st.sidebar.radio("Painel Cliente", ["Buscar Serviços", "Meus Dados"])
-    
-    if st.sidebar.button("Sair / Logout"):
-        st.session_state["user_logged"] = False
-        st.session_state["user_type"] = None
-        st.session_state["cliente_dados"] = None
-        st.session_state["categoria_ativa"] = None
-        st.rerun()
+        menu = st.sidebar.radio("Painel Cliente", ["Buscar Serviços", "Ver Avaliações", "Meus Dados"])
+
+if st.sidebar.button("Sair / Logout"):
+    st.session_state["user_logged"] = False
+    st.session_state["user_type"] = None
+    st.session_state["cliente_dados"] = None
+    st.session_state["categoria_ativa"] = None
+    st.rerun()
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("📢 Suporte & Reclamações")
@@ -154,9 +164,22 @@ elif menu == "Gerenciar Serviços/Preços":
                 st.error("Erro interno ao tentar salvar dados no banco.")
 
     st.subheader("Tabela de Preços Cadastrados")
-    dados_tabela = executar_select_direto("app_servicos_detalhes", "?select=categoria,nome_detalhado,preco")
+    dados_tabela = executar_select_direto("app_servicos_detalhes", "?select=id,categoria,nome_detalhado,preco")
     if dados_tabela and not isinstance(dados_tabela, dict):
         st.dataframe(dados_tabela, use_container_width=True)
+        
+        st.markdown("---")
+        st.subheader("❌ Excluir Serviços ou Categorias")
+        lista_opcoes_servicos = [f"{item['id']} - {item['categoria']}: {item['nome_detalhado']}" for item in dados_tabela]
+        servico_para_excluir = st.selectbox("Selecione o serviço para deletar definitivamente:", lista_opcoes_servicos)
+        if st.button("Remover Serviço Selecionado"):
+            id_servico = servico_para_excluir.split(" - ")[0]
+            ret_del = executar_delete_direto("app_servicos_detalhes", f"?id=eq.{id_servico}")
+            if ret_del["sucesso"]:
+                st.success("Serviço removido com sucesso!")
+                st.rerun()
+            else:
+                st.error("Erro ao deletar do banco de dados.")
     else:
         st.info("Nenhum preço listado ou banco de dados aguardando novos registros.")
 
@@ -178,16 +201,52 @@ elif menu == "Cadastrar Profissional":
             })
             if retorno["sucesso"]:
                 st.success("Profissional cadastrado com sucesso!")
+                st.rerun()
             else:
                 st.error("Falha ao salvar profissional no banco de dados.")
 
+    st.markdown("---")
+    st.subheader("❌ Excluir Profissional Cadastrado")
+    dados_prof = executar_select_direto("app_servicos_profissionais", "?select=id,nome,servico_principal")
+    if dados_prof and not isinstance(dados_prof, dict):
+        lista_opcoes_prof = [f"{p['id']} - {p['nome']} ({p['servico_principal']})" for p in dados_prof]
+        prof_para_excluir = st.selectbox("Selecione o profissional para remover:", lista_opcoes_prof)
+        if st.button("Remover Profissional Selecionado"):
+            id_prof = prof_para_excluir.split(" - ")[0]
+            ret_del = executar_delete_direto("app_servicos_profissionais", f"?id=eq.{id_prof}")
+            if ret_del["sucesso"]:
+                st.success("Profissional removido com sucesso!")
+                st.rerun()
+            else:
+                st.error("Erro ao deletar profissional.")
+
+elif menu == "Gerenciar Clientes":
+    st.title("👥 Gerenciar Clientes Cadastrados")
+    dados_clientes = executar_select_direto("app_servicos_clientes", "?select=id,nome_completo,whatsapp")
+    if dados_clientes and not isinstance(dados_clientes, dict):
+        st.dataframe(dados_clientes, use_container_width=True)
+        st.markdown("---")
+        st.subheader("❌ Excluir Cliente Cadastrado")
+        lista_opcoes_cli = [f"{c['id']} - {c['nome_completo']} ({c['whatsapp']})" for c in dados_clientes]
+        cli_para_excluir = st.selectbox("Selecione o cliente para remover:", lista_opcoes_cli)
+        if st.button("Remover Cliente Selecionado"):
+            id_cli = cli_para_excluir.split(" - ")[0]
+            ret_del = executar_delete_direto("app_servicos_clientes", f"?id=eq.{id_cli}")
+            if ret_del["sucesso"]:
+                st.success("Cliente removido do sistema com sucesso!")
+                st.rerun()
+            else:
+                st.error("Erro ao deletar cliente.")
+    else:
+        st.info("Nenhum cliente cadastrado no sistema até o momento.")
+
 elif menu == "Ver Logs de Ligações":
-    st.title("📊 Histórico de Ligações Registradas")
-    dados_logs = executar_select_direto("app_servicos_logs_ligacoes", "?select=cliente_nome,profissional_nome,horario,atendido&order=horario.desc")
+    st.title("📊 Histórico de Ligações e Avaliações")
+    dados_logs = executar_select_direto("app_servicos_logs_ligacoes", "?select=cliente_nome,profissional_nome,horario,motivo_feedback&order=horario.desc")
     if dados_logs and not isinstance(dados_logs, dict):
         st.dataframe(dados_logs, use_container_width=True)
     else:
-        st.info("Nenhum registro de log de ligação disponível.")
+        st.info("Nenhum registro de log ou avaliação disponível.")
 
 # --- TELAS DO SISTEMA: 2. ÁREA DO CLIENTE (LOGIN/CADASTRO) ---
 elif menu == "Área do Cliente" and not st.session_state["user_logged"]:
@@ -206,7 +265,6 @@ elif menu == "Área do Cliente" and not st.session_state["user_logged"]:
                 st.rerun()
             else:
                 st.error("Telefone não encontrado nas tabelas do sistema.")
-                st.info(f"Retorno do Banco para o número '{tel_login}': {str(dados_cli)}")
 
     with aba_cadastro:
         nome_c = st.text_input("Nome Completo")
@@ -268,20 +326,60 @@ elif menu == "Buscar Serviços":
                 st.write(f"**Nome:** {prof_item['nome']}")
                 st.write(f"📍 **Localidade:** {prof_item['localidade']}")
                 st.write(f"📞 **WhatsApp:** {prof_item['telefone']}")
-                st.write("Para falar com o profissional, use os botões abaixo:")
-                c1, c2 = st.columns(2)
                 
                 tel_limpo = "".join(filter(str.isdigit, prof_item['telefone']))
-                link_discador = f'<a href="tel:{tel_limpo}" target="_blank" style="text-decoration: none;"><button style="width: 100%; background-color: #25D366; color: white; border: none; padding: 0.5rem; border-radius: 4px; cursor: pointer; font-weight: bold;">📞 Discar para {prof_item["nome"]}</button></a>'
-                c1.markdown(link_discador, unsafe_allow_html=True)
+                mensagem_texto = f"Olá {prof_item['nome']}, peguei seu contato no App de Serviços Prediais. Gostaria de um orçamento para o serviço de {opcao_servico}."
+                msg_codificada = urllib.parse.quote(mensagem_texto)
+                link_whatsapp = f"https://wa.me{tel_limpo}?text={msg_codificada}"
                 
-                if c1.button("📌 Registrar que Liguei", key=f"log_ligar_{idx_p}"):
-                    registrar_ligacao(cliente_info_busca.get('nome_completo', 'Cliente'), prof_item["nome"], True)
-                    st.success("Ligação registrada no histórico do sistema!")
+                c1, c2 = st.columns(2)
+                
+                link_html_whats = f'<a href="{link_whatsapp}" target="_blank" style="text-decoration: none;"><button style="width: 100%; background-color: #25D366; color: white; border: none; padding: 0.5rem; border-radius: 4px; cursor: pointer; font-weight: bold; text-align: center; height: 38px;">💬 Chamar no WhatsApp</button></a>'
+                c1.markdown(link_html_whats, unsafe_allow_html=True)
+                
+                with c2.expander("⭐ Avaliar este Contato"):
+                    motivo_selecionado = st.selectbox(
+                        "O que aconteceu?",
+                        ["Selecione uma opção...", "Conversei e agendei o serviço", "Não retornou o contato", "Não faz este serviço específico", "Preço diferente do aplicativo", "Outro motivo"],
+                        key=f"motivo_{idx_p}"
+                    )
+                    detalhe_adicional = st.text_input("Comentário adicional (opcional)", key=f"coment_{idx_p}")
                     
-                if c2.button("❌ Chamei mas não atendeu", key=f"nao_atendeu_{idx_p}"):
-                    registrar_ligacao(cliente_info_busca.get('nome_completo', 'Cliente'), prof_item["nome"], False)
-                    st.warning("Tentativa de contato sem sucesso registrada.")
+                    if st.button("Enviar Avaliação", key=f"btn_aval_{idx_p}"):
+                        if motivo_selecionado != "Selecione uma opção...":
+                            dados_log_atualizado = {
+                                "cliente_nome": cliente_info_busca.get('nome_completo', 'Cliente'),
+                                "profissional_nome": prof_item["nome"],
+                                "horario": datetime.datetime.now().isoformat(),
+                                "atendido": True if "agendei" in motivo_selecionado else False,
+                                "motivo_feedback": f"{motivo_selecionado} - {detalhe_adicional}".strip(" - ")
+                            }
+                            executar_insert_direto("app_servicos_logs_ligacoes", dados_log_atualizado)
+                            st.success("Avaliação registrada com sucesso!")
+                        else:
+                            st.error("Por favor, selecione uma opção antes de enviar.")
+
+elif menu == "Ver Avaliações":
+    st.title("⭐ Avaliações dos Profissionais")
+    st.write("Consulte os feedbacks deixados por outros clientes do aplicativo.")
+    
+    dados_profissionais = executar_select_direto("app_servicos_profissionais", "?select=nome,servico_principal")
+    if dados_profissionais and not isinstance(dados_profissionais, dict):
+        nomes_prof = list(set([p['nome'] for p in dados_profissionais]))
+        prof_escolhido = st.selectbox("Escolha um profissional para visualizar o histórico:", nomes_prof)
+        
+        if prof_escolhido:
+            feedbacks = buscar_avaliacoes_profissional(prof_escolhido)
+            if feedbacks:
+                for f in feedbacks:
+                    with st.chat_message("user"):
+                        st.write(f"**Cliente:** {f.get('cliente_nome', 'Anônimo')}")
+                        st.write(f"💬 {f.get('motivo_feedback', 'Sem observações adicionais')}")
+                        st.caption(f"Enviado em: {f.get('horario', '')[:10]}")
+            else:
+                st.info("Este profissional ainda não possui feedbacks registrados.")
+    else:
+        st.info("Nenhum profissional cadastrado para exibir avaliações.")
 
 elif menu == "Meus Dados":
     cliente_info_perfil = st.session_state['cliente_dados'] if st.session_state['cliente_dados'] else {}
