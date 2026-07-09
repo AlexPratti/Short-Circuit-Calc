@@ -89,7 +89,7 @@ def buscar_categorias():
     return []
 
 def buscar_servicos_por_categoria(cat):
-    dados = executar_select_direto("app_servicos_detalhes", f"?select=categoria,nome_detalhado,preco&categoria=eq.{cat}&ativo=eq.true")
+    dados = executar_select_direto("app_servicos_detalhes", f"?select=id,categoria,nome_detalhado,metrica,preco&categoria=eq.{cat}&ativo=eq.true")
     if dados and not isinstance(dados, dict):
         return dados
     return []
@@ -99,7 +99,6 @@ def buscar_avaliacoes_profissional(nome_prof):
     if dados and not isinstance(dados, dict):
         return dados
     return []
-
 # --- CÁLCULO LOGÍSTICO DE DESLOCAMENTO (LINHARES-ES) ---
 def calcular_taxa_deslocamento(loc_cliente, loc_profissional):
     VISITA_BASE = 40.00
@@ -186,8 +185,6 @@ st.sidebar.info(f"📧 {email_admin_seguro}\n\n📞 {tel_formatado}")
 st.sidebar.markdown("---")
 st.sidebar.caption("💳 **Chave PIX para Pagamentos:**")
 st.sidebar.code(chave_pix_segura, language="text")
-
-
 # --- TELAS DO SISTEMA: 1. ÁREA ADMINISTRATIVA ---
 if menu == "Área Administrativa" and not st.session_state["user_logged"]:
     st.title("🔒 Login Administrativo")
@@ -206,27 +203,55 @@ if menu == "Área Administrativa" and not st.session_state["user_logged"]:
 elif menu == "Gerenciar Serviços/Preços":
     st.title("⚙️ Gerenciar Categorias e Preços")
     st.subheader("Adicionar Novo Tipo de Serviço / Botão")
-    nova_cat = st.text_input("Categoria Principal (Ex: Elétrica, Hidráulica, Mecânica)")
-    novo_serv = st.text_input("Serviço Detalhado (Ex: Instalação de chuveiro elétrico 220 V)")
+    
+    nova_cat = st.text_input("Categoria Principal (Ex: Manutenção Elétrica, Climatização e Ventilação)")
+    novo_serv = st.text_input("Serviço Detalhado (Ex: Instalação de Ar Condicionado Split de 9.000 BTUs)")
+    
+    # Campo para definição da métrica opcional exigida
+    nova_metrica = st.selectbox("Este serviço possui métrica?", ["Sem Métrica", "Unidade"])
     novo_preco = st.number_input("Preço Sugerido (R$)", min_value=0.0, step=10.0)
     
     if st.button("Salvar Serviço"):
         if nova_cat and novo_serv:
             retorno = executar_insert_direto("app_servicos_detalhes", {
-                "categoria": nova_cat.strip().capitalize(),
+                "categoria": nova_cat.strip(),
                 "nome_detalhado": novo_serv.strip(),
+                "metrica": nova_metrica,
                 "preco": novo_preco,
                 "ativo": True
             })
             if retorno["sucesso"]:
-                st.success(f"Botão/Serviço '{nova_cat}' adicionado com sucesso!")
+                st.success(f"Serviço adicionado com sucesso na categoria '{nova_cat}'!")
                 st.rerun()
             else:
                 st.error("Erro interno ao tentar salvar dados no banco.")
 
+    # --- NOVA FUNCIONALIDADE: MODIFICAR PREÇO BASE OFICIAL ---
+    st.markdown("---")
+    st.subheader("✏️ Modificar Preço Base Oficial")
+    
+    dados_edicao = executar_select_direto("app_servicos_detalhes", "?select=id,categoria,nome_detalhado,metrica,preco&ativo=eq.true")
+    if dados_edicao and not isinstance(dados_ edicao, dict):
+        lista_opcoes_edicao = [f"{item['id']} - [{item['categoria']}] {item['nome_detalhado']} (Atual: R$ {item['preco']:.2f})" for item in dados_edicao]
+        servico_para_editar = st.selectbox("Selecione o serviço para alterar o preço:", lista_opcoes_edicao, key="sb_editar_preco")
+        
+        id_servico_edit = servico_para_editar.split(" - ")[0]
+        # Recupera o registro atual selecionado
+        item_selecionado = next((item for item in dados_edicao if str(item['id']) == id_servico_edit), None)
+        
+        if item_selecionado:
+            novo_preco_base = st.number_input("Definir Novo Preço Base Oficial (R$)", min_value=0.0, step=5.0, value=float(item_selecionado['preco']))
+            if st.button("Atualizar Preço Oficial"):
+                ret_upd = executar_update_direto("app_servicos_detalhes", f"?id=eq.{id_servico_edit}", {"preco": novo_preco_base})
+                if ret_upd["sucesso"]:
+                    st.success("Preço Base Oficial atualizado com sucesso!")
+                    st.rerun()
+                else:
+                    st.error("Erro ao atualizar o preço no banco de dados.")
+
+    st.markdown("---")
     st.subheader("Tabela de Preços Cadastrados")
-    # Busca apenas os serviços ativos para exibição e gerenciamento
-    dados_tabela = executar_select_direto("app_servicos_detalhes", "?select=id,categoria,nome_detalhado,preco&ativo=eq.true")
+    dados_tabela = executar_select_direto("app_servicos_detalhes", "?select=id,categoria,nome_detalhado,metrica,preco&ativo=eq.true")
     if dados_tabela and not isinstance(dados_tabela, dict):
         st.dataframe(dados_tabela, use_container_width=True)
         
@@ -236,7 +261,6 @@ elif menu == "Gerenciar Serviços/Preços":
         servico_para_excluir = st.selectbox("Selecione o serviço para desativar do app:", lista_opcoes_servicos)
         if st.button("Desativar Serviço Selecionado"):
             id_servico = servico_para_excluir.split(" - ")[0]
-            # Exclusão Lógica alterando ativo para false
             ret_del = executar_update_direto("app_servicos_detalhes", f"?id=eq.{id_servico}", {"ativo": False})
             if ret_del["sucesso"]:
                 st.success("Serviço desativado com sucesso!")
@@ -245,7 +269,6 @@ elif menu == "Gerenciar Serviços/Preços":
                 st.error("Erro ao desativar do banco de dados.")
     else:
         st.info("Nenhum preço listado ou banco de dados aguardando novos registros ativos.")
-
 elif menu == "Cadastrar Profissional":
     st.title("👨‍🔧 Cadastrar Novo Profissional")
     nome = st.text_input("Nome Completo do Profissional")
@@ -256,7 +279,6 @@ elif menu == "Cadastrar Profissional":
     
     if st.button("Cadastrar Profissional"):
         if nome and localidade and telefone:
-            # --- MELHORIA: BLOQUEIO DE CADASTROS DUPLICADOS POR WHATSAPP ---
             res_check = executar_select_direto("app_servicos_profissionais", f"?select=telefone&telefone=eq.{telefone.strip()}&ativo=eq.true")
             if res_check and isinstance(res_check, list) and len(res_check) > 0:
                 st.warning("Este número de WhatsApp já pertence a um profissional ativo cadastrado.")
@@ -282,7 +304,6 @@ elif menu == "Cadastrar Profissional":
         prof_para_excluir = st.selectbox("Selecione o profissional para remover do app:", lista_opcoes_prof)
         if st.button("Desativar Profissional Selecionado"):
             id_prof = prof_para_excluir.split(" - ")[0]
-            # Exclusão Lógica
             ret_del = executar_update_direto("app_servicos_profissionais", f"?id=eq.{id_prof}", {"ativo": False})
             if ret_del["sucesso"]:
                 st.success("Profissional desativado com sucesso!")
@@ -301,7 +322,6 @@ elif menu == "Gerenciar Clientes":
         cli_para_excluir = st.selectbox("Selecione o cliente para suspender acesso:", lista_opcoes_cli)
         if st.button("Desativar Cliente Selecionado"):
             id_cli = cli_para_excluir.split(" - ")[0]
-            # Exclusão Lógica
             ret_del = executar_update_direto("app_servicos_clientes", f"?id=eq.{id_cli}", {"ativo": False})
             if ret_del["sucesso"]:
                 st.success("Acesso do cliente desativado com sucesso!")
@@ -319,7 +339,6 @@ elif menu == "Ver Logs de Ligações":
     else:
         st.info("Nenhum registro de log ou avaliação disponível.")
 
-# --- TELAS DO SISTEMA: 2. ÁREA DO CLIENTE (LOGIN/CADASTRO) ---
 elif menu == "Área do Cliente" and not st.session_state["user_logged"]:
     st.title("📱 Acesso do Cliente")
     aba_login, aba_cadastro = st.tabs(["Já tenho cadastro", "Criar Nova Conta"])
@@ -327,7 +346,6 @@ elif menu == "Área do Cliente" and not st.session_state["user_logged"]:
     with aba_login:
         tel_login = st.text_input("Digite seu Telefone WhatsApp Cadastrado", key="login_tel")
         if st.button("Entrar"):
-            # Verifica apenas clientes ativos
             dados_cli = executar_select_direto("app_servicos_clientes", f"?select=nome_completo,endereco,whatsapp&whatsapp=eq.{tel_login.strip()}&ativo=eq.true")
             if dados_cli and isinstance(dados_cli, list) and len(dados_cli) > 0:
                 st.session_state["user_logged"] = True
@@ -355,10 +373,8 @@ elif menu == "Área do Cliente" and not st.session_state["user_logged"]:
                         st.success("Cadastro efetuado com sucesso! Faça o login na aba ao lado.")
                     else:
                         st.error(f"Erro ao salvar cadastro: {retorno['detalhes']}")
-
 # --- TELAS DO SISTEMA: 3. PAINEL DO CLIENTE LOGADO ---
 if menu.startswith("Buscar Serviços"):
-    # Normalização segura do dicionário de dados do cliente logado
     dados_brutos_c = st.session_state['cliente_dados']
     cliente_info_busca = dados_brutos_c if isinstance(dados_brutos_c, list) else (dados_brutos_c if dados_brutos_c else {})
     
@@ -410,6 +426,7 @@ if menu.startswith("Buscar Serviços"):
     for idx, cat in enumerate(categorias):
         if colunas[idx].button(f"🔹 {cat}", use_container_width=True):
             st.session_state["categoria_ativa"] = cat
+            
     if st.session_state["categoria_ativa"]:
         cat_ativa = st.session_state["categoria_ativa"]
         st.markdown(f"### 🛠️ Lista de opções para: **{cat_ativa}**")
@@ -419,29 +436,42 @@ if menu.startswith("Buscar Serviços"):
             for idx_s, s in enumerate(servicos_detalhados):
                 with st.container(border=True):
                     col_s1, col_s2 = st.columns(2)
-                    col_s1.write(f"**{s['nome_detalhado']}**")
-                    col_s1.write(f"Preço Base Oficial: R$ {s['preco']:.2f}")
                     
-                    ja_no_carrinho = any(item['nome'] == s['nome_detalhado'] for item in st.session_state["carrinho"])
+                    # Exibição condicional da métrica por Unidade se aplicável ao serviço
+                    tem_unidade = str(s.get('metrica', '')).strip().lower() == "unidade"
+                    
+                    if tem_unidade:
+                        col_s1.write(f"**{s['nome_detalhado']}**")
+                        qtd_selecionada = col_s1.number_input(f"Selecione a quantidade para este item:", min_value=1, value=1, step=1, key=f"qtd_serv_{s['id']}")
+                        preco_calculado = float(s['preco']) * qtd_selecionada
+                        col_s1.write(f"Preço Base Oficial: R$ {s['preco']:.2f} por Unidade")
+                        col_s1.write(f"**Subtotal do Item:** R$ {preco_calculado:.2f}")
+                        nome_final_carrinho = f"{s['nome_detalhado']} (Qtd: {qtd_selecionada})"
+                    else:
+                        col_s1.write(f"**{s['nome_detalhado']}**")
+                        col_s1.write(f"Preço Base Oficial: R$ {s['preco']:.2f}")
+                        preco_calculado = float(s['preco'])
+                        nome_final_carrinho = s['nome_detalhado']
+                    
+                    ja_no_carrinho = any(item['nome'].startswith(s['nome_detalhado']) for item in st.session_state["carrinho"])
                     
                     if ja_no_carrinho:
                         if col_s2.button("➖ Remover do Carrinho", key=f"rem_list_{idx_s}", use_container_width=True):
                             for i, item_c in enumerate(st.session_state["carrinho"]):
-                                if item_c['nome'] == s['nome_detalhado']:
+                                if item_c['nome'].startswith(s['nome_detalhado']):
                                     st.session_state["carrinho"].pop(i)
                                     break
                             st.rerun()
                     else:
                         if col_s2.button("➕ Adicionar", key=f"add_cart_{idx_s}", use_container_width=True):
                             st.session_state["carrinho"].append({
-                                "nome": s['nome_detalhado'],
-                                "preco": s['preco'],
+                                "nome": nome_final_carrinho,
+                                "preco": preco_calculado,
                                 "categoria": cat_ativa
                             })
                             st.rerun()
         else:
             st.info("Nenhum preço detalhado fixado para esta categoria ainda.")
-
         st.markdown("---")
         st.markdown("#### 🧔 Profissionais Disponíveis na sua Área:")
         
