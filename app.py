@@ -98,7 +98,7 @@ def buscar_servicos_por_categoria(cat):
     return dados_locais.get(cat, [])
 
 def buscar_avaliacoes_profissional(nome_prof):
-    dados = executar_select_direto("app_servicos_logs_ligacoes", f"?select=cliente_nome,horario,motivo_feedback,nota_estrelas&profissional_nome=eq.{nome_prof}&order=horario.desc")
+    dados =幻想excutar_select_direto("app_servicos_logs_ligacoes", f"?select=cliente_nome,horario,motivo_feedback,nota_estrelas&profissional_nome=eq.{nome_prof}&order=horario.desc")
     if dados and not isinstance(dados, dict):
         return dados
     return []
@@ -132,7 +132,10 @@ st.sidebar.write("Fale com o Administrador:")
 tel_admin_seguro = st.secrets["TELEFONE_ADMIN"].strip()
 email_admin_seguro = st.secrets["EMAIL_ADMIN"].strip()
 
-if len(tel_admin_seguro) >= 11:
+# --- AJUSTE DE FORMATAÇÃO DO TELEFONE COM DDD DE 3 DÍGITOS ---
+if len(tel_admin_seguro) == 12:  # Caso o número comece com zero (ex: 027999060525)
+    tel_formatado = f"({tel_admin_seguro[:3]}) {tel_admin_seguro[3:8]}-{tel_admin_seguro[8:]}"
+elif len(tel_admin_seguro) == 11:  # Padrão tradicional com 2 dígitos no DDD
     tel_formatado = f"({tel_admin_seguro[:2]}) {tel_admin_seguro[2:7]}-{tel_admin_seguro[7:]}"
 else:
     tel_formatado = tel_admin_seguro
@@ -146,6 +149,7 @@ link_html_admin = f'<a href="{link_whats_admin}" style="text-decoration: none;">
 st.sidebar.markdown(link_html_admin, unsafe_allow_html=True)
 
 st.sidebar.info(f"📧 {email_admin_seguro}\n\n📞 {tel_formatado}")
+
 
 
 
