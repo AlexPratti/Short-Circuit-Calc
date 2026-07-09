@@ -10,7 +10,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- CREDENCIAIS ABSOLUTAS FIXAS ---
+# --- CREDENCIAIS ABSOLUTAS FIXAS (Tratamento automático de sufixo) ---
 URL_BRUTA = st.secrets["URL_SUPABASE"].strip().rstrip('/')
 if "/rest/v1" in URL_BRUTA:
     URL_PROJETO_REAL = URL_BRUTA.split("/rest/v1")[0]
@@ -95,7 +95,6 @@ def buscar_servicos_por_categoria(cat):
     return []
 
 def buscar_avaliacoes_profissional(nome_prof):
-    # CORRIGIDO: Removido o erro de sintaxe '幻想' que quebrava o login do cliente
     dados = executar_select_direto("app_servicos_logs_ligacoes", f"?select=cliente_nome,horario,motivo_feedback,nota_estrelas&profissional_nome=eq.{nome_prof}&order=horario.desc")
     if dados and not isinstance(dados, dict):
         return dados
@@ -103,31 +102,21 @@ def buscar_avaliacoes_profissional(nome_prof):
 
 # --- CÁLCULO LOGÍSTICO DE DESLOCAMENTO (LINHARES-ES) ---
 def calcular_taxa_deslocamento(loc_cliente, loc_profissional):
-    """
-    Estima taxas de visita com base nos bairros principais de Linhares-ES.
-    Se o cliente não tiver uma localidade exata mapeada, aplica-se uma taxa base padrão.
-    """
     VISITA_BASE = 40.00
-    
     c_limpo = str(loc_cliente).strip().lower()
     p_limpo = str(loc_profissional).strip().lower()
     
-    # Se estão exatamente no mesmo bairro/região
     if c_limpo == p_limpo or p_limpo in c_limpo:
         return VISITA_BASE, "Mesma Região"
         
-    # Zoneamento simplificado de Linhares para cálculo de distância por bairros
     centro_bairros = ["centro", "conceição", "juparanã", "colina", "aviso", "araçá", "shell"]
     periferia_bairros = ["interlagos", "bnh", "são josé", "mivel", "santa cruz", "nova esperança", "planalto", "canivete"]
     bairros_afastados = ["bebedouro", "rio quartel", "farias", "regência", "povoação", "sooretama"]
     
-    # Validações cruzadas de deslocamento aproximado
     is_c_centro = any(b in c_limpo for b in centro_bairros)
     is_p_centro = any(b in p_limpo for b in centro_bairros)
-    
     is_c_perif = any(b in c_limpo for b in periferia_bairros)
     is_p_perif = any(b in p_limpo for b in periferia_bairros)
-    
     is_c_interior = any(b in c_limpo for b in bairros_afastados)
     is_p_interior = any(b in p_limpo for b in bairros_afastados)
     
@@ -150,13 +139,11 @@ else:
         menu = st.sidebar.radio("Painel Admin", ["Gerenciar Serviços/Preços", "Cadastrar Profissional", "Gerenciar Clientes", "Ver Logs de Ligações"])
     else:
         dados_cli = st.session_state['cliente_dados']
-        cliente_info_topo = dados_cli[0] if isinstance(dados_cli, list) else dados_cli
+        cliente_info_topo = dados_cli[0] if isinstance(dados_cli, list) and len(dados_cli) > 0 else (dados_cli if isinstance(dados_cli, dict) else {})
         st.sidebar.success(f"Cliente: {cliente_info_topo.get('nome_completo', 'Usuário')}")
         
-        # Mostra indicador visual do carrinho se houver itens
         qtd_itens_cart = len(st.session_state["carrinho"])
         label_busca = f"Buscar Serviços ({qtd_itens_cart})" if qtd_itens_cart > 0 else "Buscar Serviços"
-        
         menu = st.sidebar.radio("Painel Cliente", [label_busca, "Ver Avaliações", "Meus Dados"])
 
 if st.sidebar.button("Sair / Logout"):
@@ -169,13 +156,17 @@ if st.sidebar.button("Sair / Logout"):
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("📢 Suporte & Reclamações")
+st.sidebar.write("Fale com o Administrador:")
 
+# Configurações de segurança puxando dos Secrets
 tel_admin_seguro = st.secrets["TELEFONE_ADMIN"].strip()
 email_admin_seguro = st.secrets["EMAIL_ADMIN"].strip()
+chave_pix_segura = st.secrets["CHAVE_PIX_ADMIN"].strip()
 
-if len(tel_admin_seguro) == 12:
+# --- AJUSTE DE FORMATAÇÃO DO TELEFONE COM DDD DE 3 DÍGITOS ---
+if len(tel_admin_seguro) == 12:  # Caso o número comece com zero (ex: 027999060525)
     tel_formatado = f"({tel_admin_seguro[:3]}) {tel_admin_seguro[3:8]}-{tel_admin_seguro[8:]}"
-elif len(tel_admin_seguro) == 11:
+elif len(tel_admin_seguro) == 11:  # Padrão tradicional com 2 dígitos no DDD
     tel_formatado = f"({tel_admin_seguro[:2]}) {tel_admin_seguro[2:7]}-{tel_admin_seguro[7:]}"
 else:
     tel_formatado = tel_admin_seguro
@@ -184,10 +175,17 @@ mensagem_admin = "Olá, preciso de suporte no aplicativo de Serviços Prediais."
 msg_admin_codificada = urllib.parse.quote(mensagem_admin)
 link_whats_admin = f"whatsapp://send?phone={tel_admin_seguro}&text={msg_admin_codificada}"
 
+# Botão corrigido para Celular
 link_html_admin = f'<a href="{link_whats_admin}" style="text-decoration: none;"><button style="width: 100%; background-color: #25D366; color: white; border: none; padding: 0.5rem; border-radius: 4px; cursor: pointer; font-weight: bold; text-align: center; margin-bottom: 10px;">💬 Suporte via WhatsApp</button></a>'
 st.sidebar.markdown(link_html_admin, unsafe_allow_html=True)
 
+# Informações de contato
 st.sidebar.info(f"📧 {email_admin_seguro}\n\n📞 {tel_formatado}")
+
+# --- MELHORIA: CHAVE PIX DO ADMINISTRADOR FIXA NA SIDEBAR ---
+st.sidebar.markdown("---")
+st.sidebar.caption("💳 **Chave PIX para Pagamentos:**")
+st.sidebar.code(chave_pix_segura, language="text")
 
 
 # --- TELAS DO SISTEMA: 1. ÁREA ADMINISTRATIVA ---
