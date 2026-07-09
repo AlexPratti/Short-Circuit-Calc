@@ -377,7 +377,7 @@ if menu.startswith("Buscar Serviços"):
             if col_add3.button("Confirmar Extra", key="btn_add_extra_serv", use_container_width=True):
                 if nome_extra:
                     st.session_state["carrinho"].append({
-                        "name": f"{nome_extra.strip()} (Combinado no Local)",
+                        "nome": f"{nome_extra.strip()} (Combinado no Local)",
                         "preco": preco_extra,
                         "categoria": "Customizado"
                     })
@@ -396,6 +396,7 @@ if menu.startswith("Buscar Serviços"):
                 if c_dir.button("🗑️ Remover", key=f"del_cart_{idx_c}"):
                     st.session_state["carrinho"].pop(idx_c)
                     st.rerun()
+                    
             st.markdown(f"**Subtotal dos Serviços:** R$ {subtotal_itens:.2f}")
             if st.button("Clear 🛒 Limpar Tudo"):
                 st.session_state["carrinho"] = []
@@ -409,7 +410,6 @@ if menu.startswith("Buscar Serviços"):
     for idx, cat in enumerate(categorias):
         if colunas[idx].button(f"🔹 {cat}", use_container_width=True):
             st.session_state["categoria_ativa"] = cat
-
     if st.session_state["categoria_ativa"]:
         cat_ativa = st.session_state["categoria_ativa"]
         st.markdown(f"### 🛠️ Lista de opções para: **{cat_ativa}**")
@@ -441,6 +441,7 @@ if menu.startswith("Buscar Serviços"):
                             st.rerun()
         else:
             st.info("Nenhum preço detalhado fixado para esta categoria ainda.")
+
         st.markdown("---")
         st.markdown("#### 🧔 Profissionais Disponíveis na sua Área:")
         
@@ -457,7 +458,6 @@ if menu.startswith("Buscar Serviços"):
             
         if not lista_prof:
             st.warning("Nenhum profissional desta categoria atende o bairro selecionado no momento.")
-            
         for idx_p, prof_item in enumerate(lista_prof):
             with st.container(border=True):
                 feedbacks_p = buscar_avaliacoes_profissional(prof_item["nome"])
@@ -519,16 +519,11 @@ if menu.startswith("Buscar Serviços"):
                 link_html_whats = f'<a href="{link_whatsapp}" style="text-decoration: none;"><button style="width: 100%; background-color: #25D366; color: white; border: none; padding: 0.5rem; border-radius: 4px; cursor: pointer; font-weight: bold; text-align: center; height: 38px; width: 100%;">{label_botao_whats}</button></a>'
                 c1.markdown(link_html_whats, unsafe_allow_html=True)
                 
-                with c1.container():
-                    st.caption("💳 **Pagamento do serviço ao Administrador:**")
-                    chave_pix_segura = st.secrets["CHAVE_PIX_ADMIN"].strip()
-                    st.code(chave_pix_segura, language="text")
-                
                 with c2.expander("⭐ Avaliar este Contato"):
                     nota_escolhida = st.slider("Dê uma nota para o atendimento:", min_value=1, max_value=5, value=5, key=f"nota_{idx_p}")
                     motivo_selecionado = st.selectbox(
                         "O que aconteceu?",
-                        ["Selecione uma opção...", "Conversei e agendei the serviço", "Não retornou o contato", "Não faz este serviço específico", "Preço diferente do aplicativo", "Outro motivo"],
+                        ["Selecione uma opção...", "Conversei e agendei o serviço", "Não retornou o contato", "Não faz este serviço específico", "Preço diferente do aplicativo", "Outro motivo"],
                         key=f"motivo_{idx_p}"
                     )
                     detalhe_adicional = st.text_input("Comentário adicional (opcional)", key=f"coment_{idx_p}")
