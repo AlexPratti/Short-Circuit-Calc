@@ -448,7 +448,7 @@ if menu.startswith("Buscar Serviços"):
         else:
             st.info("Nenhum preço detalhado fixado para esta categoria ainda.")
 
-        st.markdown("---")
+               st.markdown("---")
         st.markdown("#### 🧔 Profissionais Disponíveis na sua Área:")
         
         lista_prof = executar_select_direto("app_servicos_profissionais", f"?select=nome,localidade,telefone&servico_principal=eq.{cat_ativa}&ativo=eq.true")
@@ -523,10 +523,19 @@ if menu.startswith("Buscar Serviços"):
                 tel_limpo = "".join(filter(str.isdigit, prof_item['telefone']))
                 link_whatsapp = f"whatsapp://send?phone={tel_limpo}&text={msg_codificada}"
                 
+                # --- ÁREA DE LINKS E PAGAMENTO PIX ---
                 c1, c2 = st.columns(2)
                 
+                # Botão do WhatsApp
                 link_html_whats = f'<a href="{link_whatsapp}" style="text-decoration: none;"><button style="width: 100%; background-color: #25D366; color: white; border: none; padding: 0.5rem; border-radius: 4px; cursor: pointer; font-weight: bold; text-align: center; height: 38px; width: 100%;">{label_botao_whats}</button></a>'
                 c1.markdown(link_html_whats, unsafe_allow_html=True)
+                
+                # Bloco PIX Seguro com botão nativo de cópia
+                with c1.container():
+                    st.caption("💳 **Pagamento do serviço ao Administrador:**")
+                    chave_pix_segura = st.secrets["CHAVE_PIX_ADMIN"].strip()
+                    # Mostra a chave formatada e gera o botão nativo de cópia automática do Streamlit
+                    st.code(chave_pix_segura, language="text")
                 with c2.expander("⭐ Avaliar este Contato"):
                     nota_escolhida = st.slider("Dê uma nota para o atendimento:", min_value=1, max_value=5, value=5, key=f"nota_{idx_p}")
                     motivo_selecionado = st.selectbox(
