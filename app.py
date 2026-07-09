@@ -10,7 +10,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- CREDENCIAIS ABSOLUTAS FIXAS (Tratamento automático de sufixo) ---
+# --- CREDENCIAIS ABSOLUTAS FIXAS ---
 URL_BRUTA = st.secrets["URL_SUPABASE"].strip().rstrip('/')
 if "/rest/v1" in URL_BRUTA:
     URL_PROJETO_REAL = URL_BRUTA.split("/rest/v1")[0]
@@ -27,6 +27,8 @@ if "cliente_dados" not in st.session_state:
     st.session_state["cliente_dados"] = None
 if "categoria_ativa" not in st.session_state:
     st.session_state["categoria_ativa"] = None
+if "carrinho" not in st.session_state:
+    st.session_state["carrinho"] = []
 
 # --- FUNÇÕES DE BANCO POR HTTP BRUTO ---
 def executar_select_direto(tabela, parametros=""):
@@ -90,18 +92,53 @@ def buscar_servicos_por_categoria(cat):
     dados = executar_select_direto("app_servicos_detalhes", f"?select=categoria,nome_detalhado,preco&categoria=eq.{cat}&ativo=eq.true")
     if dados and not isinstance(dados, dict):
         return dados
-    dados_locais = {
-        "Elétrica": [{"nome_detalhado": "Instalação de chuveiro elétrico 220 V", "preco": 150.00}],
-        "Hidráulica": [{"nome_detalhado": "Conserto de vazamento em torneira", "preco": 80.00}],
-        "Pintura": [{"nome_detalhado": "Pintura de parede (m²)", "preco": 45.00}]
-    }
-    return dados_locais.get(cat, [])
+    return []
 
 def buscar_avaliacoes_profissional(nome_prof):
-    dados =幻想excutar_select_direto("app_servicos_logs_ligacoes", f"?select=cliente_nome,horario,motivo_feedback,nota_estrelas&profissional_nome=eq.{nome_prof}&order=horario.desc")
+    # CORRIGIDO: Removido o erro de sintaxe '幻想' que quebrava o login do cliente
+    dados = executar_select_direto("app_servicos_logs_ligacoes", f"?select=cliente_nome,horario,motivo_feedback,nota_estrelas&profissional_nome=eq.{nome_prof}&order=horario.desc")
     if dados and not isinstance(dados, dict):
         return dados
     return []
+
+# --- CÁLCULO LOGÍSTICO DE DESLOCAMENTO (LINHARES-ES) ---
+def calcular_taxa_deslocamento(loc_cliente, loc_profissional):
+    """
+    Estima taxas de visita com base nos bairros principais de Linhares-ES.
+    Se o cliente não tiver uma localidade exata mapeada, aplica-se uma taxa base padrão.
+    """
+    VISITA_BASE = 40.00
+    
+    c_limpo = str(loc_cliente).strip().lower()
+    p_limpo = str(loc_profissional).strip().lower()
+    
+    # Se estão exatamente no mesmo bairro/região
+    if c_limpo == p_limpo or p_limpo in c_limpo:
+        return VISITA_BASE, "Mesma Região"
+        
+    # Zoneamento simplificado de Linhares para cálculo de distância por bairros
+    centro_bairros = ["centro", "conceição", "juparanã", "colina", "aviso", "araçá", "shell"]
+    periferia_bairros = ["interlagos", "bnh", "são josé", "mivel", "santa cruz", "nova esperança", "planalto", "canivete"]
+    bairros_afastados = ["bebedouro", "rio quartel", "farias", "regência", "povoação", "sooretama"]
+    
+    # Validações cruzadas de deslocamento aproximado
+    is_c_centro = any(b in c_limpo for b in centro_bairros)
+    is_p_centro = any(b in p_limpo for b in centro_bairros)
+    
+    is_c_perif = any(b in c_limpo for b in periferia_bairros)
+    is_p_perif = any(b in p_limpo for b in periferia_bairros)
+    
+    is_c_interior = any(b in c_limpo for b in bairros_afastados)
+    is_p_interior = any(b in p_limpo for b in bairros_afastados)
+    
+    if (is_c_centro and is_p_centro) or (is_c_perif and is_p_perif):
+        return VISITA_BASE + 10.00, "Bairros Próximos"
+    elif (is_c_centro and is_p_perif) or (is_c_perif and is_p_centro):
+        return VISITA_BASE + 20.00, "Extremos da Cidade (Urbano)"
+    elif is_c_interior or is_p_interior:
+        return VISITA_BASE + 50.00, "Distrito / Zona Rural"
+        
+    return VISITA_BASE + 25.00, "Distância Estimada Padrão"
 
 # --- MENU LATERAL (NAVEGAÇÃO) ---
 st.sidebar.title("🛠️ Central de Serviços")
@@ -113,29 +150,32 @@ else:
         menu = st.sidebar.radio("Painel Admin", ["Gerenciar Serviços/Preços", "Cadastrar Profissional", "Gerenciar Clientes", "Ver Logs de Ligações"])
     else:
         dados_cli = st.session_state['cliente_dados']
-        cliente_info_topo = dados_cli if isinstance(dados_cli, dict) else (dados_cli if isinstance(dados_cli, list) else {})
+        cliente_info_topo = dados_cli[0] if isinstance(dados_cli, list) else dados_cli
         st.sidebar.success(f"Cliente: {cliente_info_topo.get('nome_completo', 'Usuário')}")
-        menu = st.sidebar.radio("Painel Cliente", ["Buscar Serviços", "Ver Avaliações", "Meus Dados"])
+        
+        # Mostra indicador visual do carrinho se houver itens
+        qtd_itens_cart = len(st.session_state["carrinho"])
+        label_busca = f"Buscar Serviços ({qtd_itens_cart})" if qtd_itens_cart > 0 else "Buscar Serviços"
+        
+        menu = st.sidebar.radio("Painel Cliente", [label_busca, "Ver Avaliações", "Meus Dados"])
 
 if st.sidebar.button("Sair / Logout"):
     st.session_state["user_logged"] = False
     st.session_state["user_type"] = None
     st.session_state["cliente_dados"] = None
     st.session_state["categoria_ativa"] = None
+    st.session_state["carrinho"] = []
     st.rerun()
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("📢 Suporte & Reclamações")
-st.sidebar.write("Fale com o Administrador:")
 
-# Configurações de segurança puxando dos Secrets
 tel_admin_seguro = st.secrets["TELEFONE_ADMIN"].strip()
 email_admin_seguro = st.secrets["EMAIL_ADMIN"].strip()
 
-# --- AJUSTE DE FORMATAÇÃO DO TELEFONE COM DDD DE 3 DÍGITOS ---
-if len(tel_admin_seguro) == 12:  # Caso o número comece com zero (ex: 027999060525)
+if len(tel_admin_seguro) == 12:
     tel_formatado = f"({tel_admin_seguro[:3]}) {tel_admin_seguro[3:8]}-{tel_admin_seguro[8:]}"
-elif len(tel_admin_seguro) == 11:  # Padrão tradicional com 2 dígitos no DDD
+elif len(tel_admin_seguro) == 11:
     tel_formatado = f"({tel_admin_seguro[:2]}) {tel_admin_seguro[2:7]}-{tel_admin_seguro[7:]}"
 else:
     tel_formatado = tel_admin_seguro
@@ -144,13 +184,10 @@ mensagem_admin = "Olá, preciso de suporte no aplicativo de Serviços Prediais."
 msg_admin_codificada = urllib.parse.quote(mensagem_admin)
 link_whats_admin = f"whatsapp://send?phone={tel_admin_seguro}&text={msg_admin_codificada}"
 
-# Botão corrigido para Celular (Sem target=_blank)
 link_html_admin = f'<a href="{link_whats_admin}" style="text-decoration: none;"><button style="width: 100%; background-color: #25D366; color: white; border: none; padding: 0.5rem; border-radius: 4px; cursor: pointer; font-weight: bold; text-align: center; margin-bottom: 10px;">💬 Suporte via WhatsApp</button></a>'
 st.sidebar.markdown(link_html_admin, unsafe_allow_html=True)
 
 st.sidebar.info(f"📧 {email_admin_seguro}\n\n📞 {tel_formatado}")
-
-
 
 
 # --- TELAS DO SISTEMA: 1. ÁREA ADMINISTRATIVA ---
@@ -322,11 +359,32 @@ elif menu == "Área do Cliente" and not st.session_state["user_logged"]:
                         st.error(f"Erro ao salvar cadastro: {retorno['detalhes']}")
 
 # --- TELAS DO SISTEMA: 3. PAINEL DO CLIENTE LOGADO ---
-elif menu == "Buscar Serviços":
-    cliente_info_busca = st.session_state['cliente_dados'] if st.session_state['cliente_dados'] else {}
+if menu.startswith("Buscar Serviços"):
+    # Normalização segura do dicionário de dados do cliente logado
+    dados_brutos_c = st.session_state['cliente_dados']
+    cliente_info_busca = dados_brutos_c if isinstance(dados_brutos_c, list) else (dados_brutos_c if dados_brutos_c else {})
+    
     st.title(f"Olá, {cliente_info_busca.get('nome_completo', 'Cliente')}! Do que precisa hoje?")
+    
+    # --- INTERFACE DO CARRINHO DE SERVIÇOS ---
+    if st.session_state["carrinho"]:
+        with st.expander(f"🛒 Seu Carrinho de Solicitações ({len(st.session_state['carrinho'])} itens)", expanded=True):
+            subtotal_itens = 0.0
+            for idx_c, item_c in enumerate(st.session_state["carrinho"]):
+                c_esq, c_dir = st.columns([4, 1])
+                c_esq.write(f"• **{item_c['nome']}** - Categoria: {item_c['categoria']} (R$ {item_c['preco']:.2f})")
+                subtotal_itens += item_c['preco']
+                if c_dir.button("🗑️ Remover", key=f"del_cart_{idx_c}"):
+                    st.session_state["carrinho"].pop(idx_c)
+                    st.rerun()
+            st.markdown(f"**Subtotal dos Serviços:** R$ {subtotal_itens:.2f}")
+            if st.button("Clear 🛒 Limpar Tudo"):
+                st.session_state["carrinho"] = []
+                st.rerun()
+                
+    st.markdown("---")
     categorias = buscar_categorias()
-    st.subheader("Selecione a categoria do serviço:")
+    st.subheader("Selecione uma categoria para explorar os serviços:")
     
     colunas = st.columns(len(categorias) if len(categorias) > 0 else 1)
     for idx, cat in enumerate(categorias):
@@ -335,22 +393,31 @@ elif menu == "Buscar Serviços":
 
     if st.session_state["categoria_ativa"]:
         cat_ativa = st.session_state["categoria_ativa"]
-        st.markdown(f"### 🛠️ Serviços disponíveis para: **{cat_ativa}**")
+        st.markdown(f"### 🛠️ Lista de opções para: **{cat_ativa}**")
         servicos_detalhados = buscar_servicos_por_categoria(cat_ativa)
         
         if servicos_detalhados:
-            col_esq, col_dir = st.columns(2)
-            with col_esq:
-                st.markdown("**Tabela de Preços Oficiais:**")
-                for s in servicos_detalhados:
-                    st.write(f"• **{s['nome_detalhado']}**: R$ {s['preco']:.2f}")
-            with col_dir:
-                st.markdown("**Solicitar Atendimento:**")
-                opcao_servico = st.selectbox("Qual serviço específico deseja?", [s['nome_detalhado'] for s in servicos_detalhados])
+            for idx_s, s in enumerate(servicos_detalhados):
+                with st.container(border=True):
+                    col_s1, col_s2 = st.columns([3, 1])
+                    col_s1.write(f"**{s['nome_detalhado']}**")
+                    col_s1.write(f"Preço Base Oficial: R$ {s['preco']:.2f}")
+                    
+                    # Verifica se o item já está no carrinho
+                    ja_no_carrinho = any(item['nome'] == s['nome_detalhado'] for item in st.session_state["carrinho"])
+                    
+                    if ja_no_carrinho:
+                        col_s2.info("Adicionado 🛒")
+                    else:
+                        if col_s2.button("➕ Adicionar", key=f"add_cart_{idx_s}", use_container_width=True):
+                            st.session_state["carrinho"].append({
+                                "nome": s['nome_detalhado'],
+                                "preco": s['preco'],
+                                "categoria": cat_ativa
+                            })
+                            st.rerun()
         else:
             st.info("Nenhum preço detalhado fixado para esta categoria ainda.")
-            opcao_servico = cat_ativa
-
         st.markdown("---")
         st.markdown("#### 🧔 Profissionais Disponíveis na sua Área:")
         
@@ -359,19 +426,17 @@ elif menu == "Buscar Serviços":
         if not lista_prof or isinstance(lista_prof, dict):
             lista_prof = [{"nome": "Carlos Silva", "localidade": "Centro", "telefone": "11999999999"}]
             
-        # Filtro adicional por localidade/região
         localidades_disponiveis = sorted(list(set([p['localidade'] for p in lista_prof if 'localidade' in p])))
-        localidade_selecionada = st.selectbox("📍 Filtrar lista por Localidade/Região de atendimento:", ["Todas as Regiões"] + localidades_disponiveis)
+        localidade_selecionada = st.selectbox("📍 Filtrar prestadores por Região/Bairro de Linhares:", ["Todas as Regiões"] + localidades_disponiveis)
         
         if localidade_selecionada != "Todas as Regiões":
             lista_prof = [p for p in lista_prof if p['localidade'] == localidade_selecionada]
             
         if not lista_prof:
-            st.warning("Nenhum profissional desta categoria atende a região selecionada no momento.")
+            st.warning("Nenhum profissional desta categoria atende o bairro selecionado no momento.")
             
         for idx_p, prof_item in enumerate(lista_prof):
             with st.container(border=True):
-                # Reputação matemática baseada nas estrelas coletadas
                 feedbacks_p = buscar_avaliacoes_profissional(prof_item["nome"])
                 notas_validas = [f["nota_estrelas"] for f in feedbacks_p if f.get("nota_estrelas") is not None]
                 
@@ -382,24 +447,59 @@ elif menu == "Buscar Serviços":
                     label_reputacao = "⭐ Sem avaliações"
                     
                 st.write(f"**Nome:** {prof_item['nome']} | **Reputação:** {label_reputacao}")
-                st.write(f"📍 **Localidade:** {prof_item['localidade']}")
+                st.write(f"📍 **Bairro Base:** {prof_item['localidade']}")
                 st.write(f"📞 **WhatsApp:** {prof_item['telefone']}")
                 
-                tel_limpo = "".join(filter(str.isdigit, prof_item['telefone']))
-                mensagem_texto = f"Olá {prof_item['nome']}, peguei seu contato no App de Serviços Prediais. Gostaria de um orçamento para o serviço de {opcao_servico}."
-                msg_codificada = urllib.parse.quote(mensagem_texto)
+                # --- PROCESSAMENTO LOGÍSTICO DOS VALORES (VISITA + DESLOCAMENTO) ---
+                bairro_cliente = cliente_info_busca.get('endereco', 'Centro')
+                valor_visita, tipo_distancia = calcular_taxa_deslocamento(bairro_cliente, prof_item['localidade'])
                 
-                # Protocolo corrigido para Deep Link do app nos celulares (sem target=_blank)
+                st.info(f"📋 **Logística para seu Endereço ({bairro_cliente}):** Visita Técnica + Deslocamento estimado em **R$ {valor_visita:.2f}** ({tipo_distancia})")
+                
+                # --- CONSTRUÇÃO DA MENSAGEM DO CARRINHO COMPLETO ---
+                if st.session_state["carrinho"]:
+                    texto_servicos = ""
+                    total_geral_calculado = valor_visita
+                    
+                    for idx_item, item_cart in enumerate(st.session_state["carrinho"]):
+                        texto_servicos += f"\n- {item_cart['nome']} (R$ {item_cart['preco']:.2f})"
+                        total_geral_calculado += item_cart['preco']
+                        
+                    mensagem_texto = (
+                        f"Olá {prof_item['nome']},\n\n"
+                        f"Gostaria de solicitar um orçamento no App de Serviços Prediais.\n"
+                        f"**Cliente:** {cliente_info_busca.get('nome_completo', 'Cliente')}\n"
+                        f"**Endereço de Atendimento:** {bairro_cliente}\n\n"
+                        f"**Lista de Serviços Desejados:**{texto_servicos}\n"
+                        f"- Visita Técnica + Deslocamento: R$ {valor_visita:.2f}\n\n"
+                        f"**Valor Estimado Total:** R$ {total_geral_calculado:.2f}\n"
+                        f"Você possui disponibilidade de horário para esta semana?"
+                    )
+                    label_botao_whats = "💬 Enviar Carrinho Completo via WhatsApp"
+                else:
+                    total_geral_calculado = valor_visita
+                    mensagem_texto = (
+                        f"Olá {prof_item['nome']},\n\n"
+                        f"Gostaria de um orçamento para serviços na categoria de **{cat_ativa}**.\n"
+                        f"**Cliente:** {cliente_info_busca.get('nome_completo', 'Cliente')}\n"
+                        f"**Endereço:** {bairro_cliente}\n"
+                        f"Taxa de Visita Inicial: R$ {valor_visita:.2f}"
+                    )
+                    label_botao_whats = "💬 Chamar para Orçamento Base"
+                
+                st.write(f"**Valor Total Estimado (Serviços + Visita):** R$ {total_geral_calculado:.2f}")
+                
+                msg_codificada = urllib.parse.quote(mensagem_texto)
+                tel_limpo = "".join(filter(str.isdigit, prof_item['telefone']))
                 link_whatsapp = f"whatsapp://send?phone={tel_limpo}&text={msg_codificada}"
                 
                 c1, c2 = st.columns(2)
                 
-                link_html_whats = f'<a href="{link_whatsapp}" style="text-decoration: none;"><button style="width: 100%; background-color: #25D366; color: white; border: none; padding: 0.5rem; border-radius: 4px; cursor: pointer; font-weight: bold; text-align: center; height: 38px;">💬 Chamar no WhatsApp</button></a>'
+                link_html_whats = f'<a href="{link_whatsapp}" style="text-decoration: none;"><button style="width: 100%; background-color: #25D366; color: white; border: none; padding: 0.5rem; border-radius: 4px; cursor: pointer; font-weight: bold; text-align: center; height: 38px; width: 100%;">{label_botao_whats}</button></a>'
                 c1.markdown(link_html_whats, unsafe_allow_html=True)
                 
                 with c2.expander("⭐ Avaliar este Contato"):
                     nota_escolhida = st.slider("Dê uma nota para o atendimento:", min_value=1, max_value=5, value=5, key=f"nota_{idx_p}")
-                    
                     motivo_selecionado = st.selectbox(
                         "O que aconteceu?",
                         ["Selecione uma opção...", "Conversei e agendei o serviço", "Não retornou o contato", "Não faz este serviço específico", "Preço diferente do aplicativo", "Outro motivo"],
@@ -407,7 +507,7 @@ elif menu == "Buscar Serviços":
                     )
                     detalhe_adicional = st.text_input("Comentário adicional (opcional)", key=f"coment_{idx_p}")
                     
-                    if st.button("Enviar Avaliação", key=f"btn_aval_{idx_p}"):
+                    if st.button("Enviar Avaliação", key=f"btn_aval_{idx_p}", use_container_width=True):
                         if motivo_selecionado != "Selecione uma opção...":
                             dados_log_atualizado = {
                                 "cliente_nome": cliente_info_busca.get('nome_completo', 'Cliente'),
@@ -418,7 +518,7 @@ elif menu == "Buscar Serviços":
                                 "motivo_feedback": f"{motivo_selecionado} - {detalhe_adicional}".strip(" - ")
                             }
                             executar_insert_direto("app_servicos_logs_ligacoes", dados_log_atualizado)
-                            st.success("Avaliação registrada com sucesso! A média foi atualizada.")
+                            st.success("Avaliação registrada com sucesso!")
                             st.rerun()
                         else:
                             st.error("Por favor, selecione uma opção antes de enviar.")
@@ -451,8 +551,9 @@ elif menu == "Ver Avaliações":
         st.info("Nenhum profissional ativo cadastrado para exibir avaliações.")
 
 elif menu == "Meus Dados":
-    cliente_info_perfil = st.session_state['cliente_dados'] if st.session_state['cliente_dados'] else {}
+    dados_brutos_c = st.session_state['cliente_dados']
+    cliente_info_perfil = dados_brutos_c if isinstance(dados_brutos_c, list) else (dados_brutos_c if dados_brutos_c else {})
     st.title("👤 Meus Dados de Cadastro")
     st.write(f"**Nome:** {cliente_info_perfil.get('nome_completo', '')}")
-    st.write(f"**Endereço de Atendimento:** {cliente_info_perfil.get('endereco', '')}")
+    st.write(f"**Bairro Cadastrado:** {cliente_info_perfil.get('endereco', '')}")
     st.write(f"**WhatsApp:** {cliente_info_perfil.get('whatsapp', '')}")
