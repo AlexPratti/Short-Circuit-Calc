@@ -367,11 +367,33 @@ if menu.startswith("Buscar Serviços"):
     st.title(f"Olá, {cliente_info_busca.get('nome_completo', 'Cliente')}! Do que precisa hoje?")
     
     # --- INTERFACE DO CARRINHO DE SERVIÇOS ---
-    if st.session_state["carrinho"]:
+    if st.session_state["carrinho"] is not None:
         with st.expander(f"🛒 Seu Carrinho de Solicitações ({len(st.session_state['carrinho'])} itens)", expanded=True):
+            
+            # --- NOVA FUNCIONALIDADE: ADICIONAR SERVIÇO EXTRA NA HORA / PRESENCIAL ---
+            st.markdown("**➕ Adicionar Serviço Adicional / Combinado na Hora**")
+            col_add1, col_add2, col_add3 = st.columns([2, 1, 1])
+            
+            nome_extra = col_add1.text_input("Nome do serviço extra (Ex: Ajuste de fiação)", key="nome_extra_serv")
+            preco_extra = col_add2.number_input("Valor combinado (R$)", min_value=0.0, step=5.0, key="preco_extra_serv")
+            
+            if col_add3.button("Confirmar Extra", key="btn_add_extra_serv", use_container_width=True):
+                if nome_extra:
+                    st.session_state["carrinho"].append({
+                        "nome": f"{nome_extra.strip()} (Combinado no Local)",
+                        "preco": preco_extra,
+                        "categoria": "Customizado"
+                    })
+                    st.success("Item extra adicionado ao orçamento!")
+                    st.rerun()
+                else:
+                    st.error("Digite o nome do serviço.")
+            
+            st.markdown("---")
+            
+            # Listagem dos itens existentes no carrinho
             subtotal_itens = 0.0
             for idx_c, item_c in enumerate(st.session_state["carrinho"]):
-                # CORRIGIDO: Passado explicitamente o número 2 para st.columns()
                 c_esq, c_dir = st.columns(2)
                 c_esq.write(f"• **{item_c['nome']}** - Categoria: {item_c['categoria']} (R$ {item_c['preco']:.2f})")
                 subtotal_itens += item_c['preco']
@@ -400,7 +422,6 @@ if menu.startswith("Buscar Serviços"):
         if servicos_detalhados:
             for idx_s, s in enumerate(servicos_detalhados):
                 with st.container(border=True):
-                    # CORRIGIDO: Passado explicitamente o número 2 para st.columns()
                     col_s1, col_s2 = st.columns(2)
                     col_s1.write(f"**{s['nome_detalhado']}**")
                     col_s1.write(f"Preço Base Oficial: R$ {s['preco']:.2f}")
@@ -408,7 +429,7 @@ if menu.startswith("Buscar Serviços"):
                     # Identifica se o item já está adicionado no carrinho
                     ja_no_carrinho = any(item['nome'] == s['nome_detalhado'] for item in st.session_state["carrinho"])
                     
-                    # --- ALTERNÂNCIA DINÂMICA PARA PERMITIR DESMARCAR O SERVIÇO ---
+                    # Alternância dinâmica para permitir desmarcar o serviço
                     if ja_no_carrinho:
                         if col_s2.button("➖ Remover do Carrinho", key=f"rem_list_{idx_s}", use_container_width=True):
                             for i, item_c in enumerate(st.session_state["carrinho"]):
@@ -426,6 +447,7 @@ if menu.startswith("Buscar Serviços"):
                             st.rerun()
         else:
             st.info("Nenhum preço detalhado fixado para esta categoria ainda.")
+
         st.markdown("---")
         st.markdown("#### 🧔 Profissionais Disponíveis na sua Área:")
         
