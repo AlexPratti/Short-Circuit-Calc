@@ -10,24 +10,13 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- AJUSTE DE CREDENCIAIS FIXO ---
+# --- CREDENCIAIS ABSOLUTAS FIXAS (Tratamento automático de sufixo) ---
 URL_BRUTA = st.secrets["URL_SUPABASE"].strip().rstrip('/')
 if "/rest/v1" in URL_BRUTA:
-    URL_PROJETO_REAL = URL_BRUTA.split("/rest/v1")[0]  # Corrigido: adicionado [0] para extrair a URL base corretamente
+    URL_PROJETO_REAL = URL_BRUTA.split("/rest/v1")[0]
 else:
     URL_PROJETO_REAL = URL_BRUTA
 CHAVE_PROJETO_REAL = st.secrets["KEY_SUPABASE"].strip()
-
-# --- FUNÇÃO DE BUSCA DE CATEGORIAS CORRIGIDA ---
-def buscar_categorias():
-    # Busca estritamente tudo o que está gravado de forma persistente no banco de dados
-    dados = executar_select_direto("app_servicos_detalhes", "?select=categoria&ativo=eq.true")
-    if dados and not isinstance(dados, dict):
-        categorias = list(set([item['categoria'] for item in dados if 'categoria' in item]))
-        if categorias:
-            return sorted(categorias)  # Retorna as categorias reais salvas no banco
-    return []  # Deixamos vazio para o Admin saber que precisa cadastrar a primeira se o banco estiver zerado
-
 
 # --- CONTROLE DE SESSÃO (STATE) ---
 if "user_logged" not in st.session_state:
@@ -90,16 +79,14 @@ def executar_update_direto(tabela, parametros, dados):
         return {"sucesso": False, "detalhes": str(e)}
 
 def buscar_categorias():
-    # Retorna apenas categorias de serviços ativos
     dados = executar_select_direto("app_servicos_detalhes", "?select=categoria&ativo=eq.true")
     if dados and not isinstance(dados, dict):
         categorias = list(set([item['categoria'] for item in dados if 'categoria' in item]))
         if categorias:
-            return categorias
-    return ["Elétrica", "Hidráulica", "Pintura"]
+            return sorted(categorias)
+    return []
 
 def buscar_servicos_por_categoria(cat):
-    # Retorna apenas serviços ativos
     dados = executar_select_direto("app_servicos_detalhes", f"?select=categoria,nome_detalhado,preco&categoria=eq.{cat}&ativo=eq.true")
     if dados and not isinstance(dados, dict):
         return dados
@@ -141,11 +128,10 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("📢 Suporte & Reclamações")
 st.sidebar.write("Fale com o Administrador:")
 
-# --- MELHORIA: BUSCANDO CONTATOS DIRETAMENTE DOS SECRETS ---
+# Configurações de segurança puxando dos Secrets
 tel_admin_seguro = st.secrets["TELEFONE_ADMIN"].strip()
 email_admin_seguro = st.secrets["EMAIL_ADMIN"].strip()
 
-# Formatação visual do telefone para exibição amigável (Ex: (11) 99999-9999)
 if len(tel_admin_seguro) >= 11:
     tel_formatado = f"({tel_admin_seguro[:2]}) {tel_admin_seguro[2:7]}-{tel_admin_seguro[7:]}"
 else:
@@ -153,13 +139,12 @@ else:
 
 mensagem_admin = "Olá, preciso de suporte no aplicativo de Serviços Prediais."
 msg_admin_codificada = urllib.parse.quote(mensagem_admin)
-link_whats_admin = f"https://wa.me{tel_admin_seguro}?text={msg_admin_codificada}"
+link_whats_admin = f"whatsapp://send?phone={tel_admin_seguro}&text={msg_admin_codificada}"
 
-# Botão visual do WhatsApp do Admin
-link_html_admin = f'<a href="{link_whats_admin}" target="_blank" style="text-decoration: none;"><button style="width: 100%; background-color: #25D366; color: white; border: none; padding: 0.5rem; border-radius: 4px; cursor: pointer; font-weight: bold; text-align: center; margin-bottom: 10px;">💬 Suporte via WhatsApp</button></a>'
+# Botão corrigido para Celular (Sem target=_blank)
+link_html_admin = f'<a href="{link_whats_admin}" style="text-decoration: none;"><button style="width: 100%; background-color: #25D366; color: white; border: none; padding: 0.5rem; border-radius: 4px; cursor: pointer; font-weight: bold; text-align: center; margin-bottom: 10px;">💬 Suporte via WhatsApp</button></a>'
 st.sidebar.markdown(link_html_admin, unsafe_allow_html=True)
 
-# Informações adicionais exibidas puxando das chaves seguras
 st.sidebar.info(f"📧 {email_admin_seguro}\n\n📞 {tel_formatado}")
 
 
@@ -365,17 +350,15 @@ elif menu == "Buscar Serviços":
         st.markdown("---")
         st.markdown("#### 🧔 Profissionais Disponíveis na sua Área:")
         
-        # Carrega profissionais ativos da categoria selecionada
         lista_prof = executar_select_direto("app_servicos_profissionais", f"?select=nome,localidade,telefone&servico_principal=eq.{cat_ativa}&ativo=eq.true")
         
         if not lista_prof or isinstance(lista_prof, dict):
             lista_prof = [{"nome": "Carlos Silva", "localidade": "Centro", "telefone": "11999999999"}]
             
-        # --- MELHORIA 1: FILTRO DINÂMICO ADICIONAL POR LOCALIDADE ---
+        # Filtro adicional por localidade/região
         localidades_disponiveis = sorted(list(set([p['localidade'] for p in lista_prof if 'localidade' in p])))
         localidade_selecionada = st.selectbox("📍 Filtrar lista por Localidade/Região de atendimento:", ["Todas as Regiões"] + localidades_disponiveis)
         
-        # Filtra a lista localmente se selecionada uma região específica
         if localidade_selecionada != "Todas as Regiões":
             lista_prof = [p for p in lista_prof if p['localidade'] == localidade_selecionada]
             
@@ -384,7 +367,7 @@ elif menu == "Buscar Serviços":
             
         for idx_p, prof_item in enumerate(lista_prof):
             with st.container(border=True):
-                # --- MELHORIA 2: CÁLCULO E EXIBIÇÃO DA MÉDIA DE NOTAS (ESTRELAS) ---
+                # Reputação matemática baseada nas estrelas coletadas
                 feedbacks_p = buscar_avaliacoes_profissional(prof_item["nome"])
                 notas_validas = [f["nota_estrelas"] for f in feedbacks_p if f.get("nota_estrelas") is not None]
                 
@@ -401,15 +384,16 @@ elif menu == "Buscar Serviços":
                 tel_limpo = "".join(filter(str.isdigit, prof_item['telefone']))
                 mensagem_texto = f"Olá {prof_item['nome']}, peguei seu contato no App de Serviços Prediais. Gostaria de um orçamento para o serviço de {opcao_servico}."
                 msg_codificada = urllib.parse.quote(mensagem_texto)
-                link_whatsapp = f"https://wa.me{tel_limpo}?text={msg_codificada}"
+                
+                # Protocolo corrigido para Deep Link do app nos celulares (sem target=_blank)
+                link_whatsapp = f"whatsapp://send?phone={tel_limpo}&text={msg_codificada}"
                 
                 c1, c2 = st.columns(2)
                 
-                link_html_whats = f'<a href="{link_whatsapp}" target="_blank" style="text-decoration: none;"><button style="width: 100%; background-color: #25D366; color: white; border: none; padding: 0.5rem; border-radius: 4px; cursor: pointer; font-weight: bold; text-align: center; height: 38px;">💬 Chamar no WhatsApp</button></a>'
+                link_html_whats = f'<a href="{link_whatsapp}" style="text-decoration: none;"><button style="width: 100%; background-color: #25D366; color: white; border: none; padding: 0.5rem; border-radius: 4px; cursor: pointer; font-weight: bold; text-align: center; height: 38px;">💬 Chamar no WhatsApp</button></a>'
                 c1.markdown(link_html_whats, unsafe_allow_html=True)
                 
                 with c2.expander("⭐ Avaliar este Contato"):
-                    # Captura de nota numérica por estrelas
                     nota_escolhida = st.slider("Dê uma nota para o atendimento:", min_value=1, max_value=5, value=5, key=f"nota_{idx_p}")
                     
                     motivo_selecionado = st.selectbox(
@@ -429,7 +413,6 @@ elif menu == "Buscar Serviços":
                                 "nota_estrelas": nota_escolhida,
                                 "motivo_feedback": f"{motivo_selecionado} - {detalhe_adicional}".strip(" - ")
                             }
-                            # Envia com a nota para o banco. Lembre-se de adicionar a coluna 'nota_estrelas' (int) no banco.
                             executar_insert_direto("app_servicos_logs_ligacoes", dados_log_atualizado)
                             st.success("Avaliação registrada com sucesso! A média foi atualizada.")
                             st.rerun()
@@ -448,7 +431,6 @@ elif menu == "Ver Avaliações":
         if prof_escolhido:
             feedbacks = buscar_avaliacoes_profissional(prof_escolhido)
             if feedbacks:
-                # Exibe a média geral no topo da consulta pública
                 notas_f = [f["nota_estrelas"] for f in feedbacks if f.get("nota_estrelas") is not None]
                 if notas_f:
                     st.subheader(f"Média Geral deste Profissional: ⭐ {sum(notas_f)/len(notas_f):.1f}")
