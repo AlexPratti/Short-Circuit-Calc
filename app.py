@@ -371,7 +371,7 @@ if menu.startswith("Buscar Serviços"):
         with st.expander(f"🛒 Seu Carrinho de Solicitações ({len(st.session_state['carrinho'])} itens)", expanded=True):
             subtotal_itens = 0.0
             for idx_c, item_c in enumerate(st.session_state["carrinho"]):
-                c_esq, c_dir = st.columns([4, 1])
+                c_esq, c_dir = st.columns()
                 c_esq.write(f"• **{item_c['nome']}** - Categoria: {item_c['categoria']} (R$ {item_c['preco']:.2f})")
                 subtotal_itens += item_c['preco']
                 if c_dir.button("🗑️ Remover", key=f"del_cart_{idx_c}"):
@@ -399,15 +399,21 @@ if menu.startswith("Buscar Serviços"):
         if servicos_detalhados:
             for idx_s, s in enumerate(servicos_detalhados):
                 with st.container(border=True):
-                    col_s1, col_s2 = st.columns([3, 1])
+                    col_s1, col_s2 = st.columns()
                     col_s1.write(f"**{s['nome_detalhado']}**")
                     col_s1.write(f"Preço Base Oficial: R$ {s['preco']:.2f}")
                     
-                    # Verifica se o item já está no carrinho
+                    # Identifica se o item já está adicionado no carrinho
                     ja_no_carrinho = any(item['nome'] == s['nome_detalhado'] for item in st.session_state["carrinho"])
                     
+                    # --- ALTERNÂNCIA DINÂMICA PARA PERMITIR DESMARCAR O SERVIÇO ---
                     if ja_no_carrinho:
-                        col_s2.info("Adicionado 🛒")
+                        if col_s2.button("➖ Remover do Carrinho", key=f"rem_list_{idx_s}", use_container_width=True):
+                            for i, item_c in enumerate(st.session_state["carrinho"]):
+                                if item_c['nome'] == s['nome_detalhado']:
+                                    st.session_state["carrinho"].pop(i)
+                                    break
+                            st.rerun()
                     else:
                         if col_s2.button("➕ Adicionar", key=f"add_cart_{idx_s}", use_container_width=True):
                             st.session_state["carrinho"].append({
@@ -497,7 +503,6 @@ if menu.startswith("Buscar Serviços"):
                 
                 link_html_whats = f'<a href="{link_whatsapp}" style="text-decoration: none;"><button style="width: 100%; background-color: #25D366; color: white; border: none; padding: 0.5rem; border-radius: 4px; cursor: pointer; font-weight: bold; text-align: center; height: 38px; width: 100%;">{label_botao_whats}</button></a>'
                 c1.markdown(link_html_whats, unsafe_allow_html=True)
-                
                 with c2.expander("⭐ Avaliar este Contato"):
                     nota_escolhida = st.slider("Dê uma nota para o atendimento:", min_value=1, max_value=5, value=5, key=f"nota_{idx_p}")
                     motivo_selecionado = st.selectbox(
