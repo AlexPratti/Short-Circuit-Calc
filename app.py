@@ -370,9 +370,8 @@ if menu.startswith("Buscar Serviços"):
     if st.session_state["carrinho"] is not None:
         with st.expander(f"🛒 Seu Carrinho de Solicitações ({len(st.session_state['carrinho'])} itens)", expanded=True):
             
-            # --- NOVA FUNCIONALIDADE: ADICIONAR SERVIÇO EXTRA NA HORA / PRESENCIAL ---
             st.markdown("**➕ Adicionar Serviço Adicional / Combinado na Hora**")
-            col_add1, col_add2, col_add3 = st.columns([2, 1, 1])
+            col_add1, col_add2, col_add3 = st.columns(3)
             
             nome_extra = col_add1.text_input("Nome do serviço extra (Ex: Ajuste de fiação)", key="nome_extra_serv")
             preco_extra = col_add2.number_input("Valor combinado (R$)", min_value=0.0, step=5.0, key="preco_extra_serv")
@@ -380,7 +379,7 @@ if menu.startswith("Buscar Serviços"):
             if col_add3.button("Confirmar Extra", key="btn_add_extra_serv", use_container_width=True):
                 if nome_extra:
                     st.session_state["carrinho"].append({
-                        "nome": f"{nome_extra.strip()} (Combinado no Local)",
+                        "name": f"{nome_extra.strip()} (Combinado no Local)",
                         "preco": preco_extra,
                         "categoria": "Customizado"
                     })
@@ -391,7 +390,6 @@ if menu.startswith("Buscar Serviços"):
             
             st.markdown("---")
             
-            # Listagem dos itens existentes no carrinho
             subtotal_itens = 0.0
             for idx_c, item_c in enumerate(st.session_state["carrinho"]):
                 c_esq, c_dir = st.columns(2)
@@ -426,10 +424,8 @@ if menu.startswith("Buscar Serviços"):
                     col_s1.write(f"**{s['nome_detalhado']}**")
                     col_s1.write(f"Preço Base Oficial: R$ {s['preco']:.2f}")
                     
-                    # Identifica se o item já está adicionado no carrinho
                     ja_no_carrinho = any(item['nome'] == s['nome_detalhado'] for item in st.session_state["carrinho"])
                     
-                    # Alternância dinâmica para permitir desmarcar o serviço
                     if ja_no_carrinho:
                         if col_s2.button("➖ Remover do Carrinho", key=f"rem_list_{idx_s}", use_container_width=True):
                             for i, item_c in enumerate(st.session_state["carrinho"]):
@@ -447,8 +443,7 @@ if menu.startswith("Buscar Serviços"):
                             st.rerun()
         else:
             st.info("Nenhum preço detalhado fixado para esta categoria ainda.")
-
-               st.markdown("---")
+        st.markdown("---")
         st.markdown("#### 🧔 Profissionais Disponíveis na sua Área:")
         
         lista_prof = executar_select_direto("app_servicos_profissionais", f"?select=nome,localidade,telefone&servico_principal=eq.{cat_ativa}&ativo=eq.true")
@@ -480,13 +475,11 @@ if menu.startswith("Buscar Serviços"):
                 st.write(f"📍 **Bairro Base:** {prof_item['localidade']}")
                 st.write(f"📞 **WhatsApp:** {prof_item['telefone']}")
                 
-                # --- PROCESSAMENTO LOGÍSTICO DOS VALORES (VISITA + DESLOCAMENTO) ---
                 bairro_cliente = cliente_info_busca.get('endereco', 'Centro')
                 valor_visita, tipo_distancia = calcular_taxa_deslocamento(bairro_cliente, prof_item['localidade'])
                 
                 st.info(f"📋 **Logística para seu Endereço ({bairro_cliente}):** Visita Técnica + Deslocamento estimado em **R$ {valor_visita:.2f}** ({tipo_distancia})")
                 
-                # --- CONSTRUÇÃO DA MENSAGEM DO CARRINHO COMPLETO ---
                 if st.session_state["carrinho"]:
                     texto_servicos = ""
                     total_geral_calculado = valor_visita
@@ -523,24 +516,21 @@ if menu.startswith("Buscar Serviços"):
                 tel_limpo = "".join(filter(str.isdigit, prof_item['telefone']))
                 link_whatsapp = f"whatsapp://send?phone={tel_limpo}&text={msg_codificada}"
                 
-                # --- ÁREA DE LINKS E PAGAMENTO PIX ---
                 c1, c2 = st.columns(2)
                 
-                # Botão do WhatsApp
                 link_html_whats = f'<a href="{link_whatsapp}" style="text-decoration: none;"><button style="width: 100%; background-color: #25D366; color: white; border: none; padding: 0.5rem; border-radius: 4px; cursor: pointer; font-weight: bold; text-align: center; height: 38px; width: 100%;">{label_botao_whats}</button></a>'
                 c1.markdown(link_html_whats, unsafe_allow_html=True)
                 
-                # Bloco PIX Seguro com botão nativo de cópia
                 with c1.container():
                     st.caption("💳 **Pagamento do serviço ao Administrador:**")
                     chave_pix_segura = st.secrets["CHAVE_PIX_ADMIN"].strip()
-                    # Mostra a chave formatada e gera o botão nativo de cópia automática do Streamlit
                     st.code(chave_pix_segura, language="text")
+                
                 with c2.expander("⭐ Avaliar este Contato"):
                     nota_escolhida = st.slider("Dê uma nota para o atendimento:", min_value=1, max_value=5, value=5, key=f"nota_{idx_p}")
                     motivo_selecionado = st.selectbox(
                         "O que aconteceu?",
-                        ["Selecione uma opção...", "Conversei e agendei o serviço", "Não retornou o contato", "Não faz este serviço específico", "Preço diferente do aplicativo", "Outro motivo"],
+                        ["Selecione uma opção...", "Conversei e agendei the serviço", "Não retornou o contato", "Não faz este serviço específico", "Preço diferente do aplicativo", "Outro motivo"],
                         key=f"motivo_{idx_p}"
                     )
                     detalhe_adicional = st.text_input("Comentário adicional (opcional)", key=f"coment_{idx_p}")
