@@ -371,7 +371,8 @@ if menu.startswith("Buscar Serviços"):
         with st.expander(f"🛒 Seu Carrinho de Solicitações ({len(st.session_state['carrinho'])} itens)", expanded=True):
             subtotal_itens = 0.0
             for idx_c, item_c in enumerate(st.session_state["carrinho"]):
-                c_esq, c_dir = st.columns()
+                # CORRIGIDO: Passado explicitamente o número 2 para st.columns()
+                c_esq, c_dir = st.columns(2)
                 c_esq.write(f"• **{item_c['nome']}** - Categoria: {item_c['categoria']} (R$ {item_c['preco']:.2f})")
                 subtotal_itens += item_c['preco']
                 if c_dir.button("🗑️ Remover", key=f"del_cart_{idx_c}"):
@@ -399,7 +400,8 @@ if menu.startswith("Buscar Serviços"):
         if servicos_detalhados:
             for idx_s, s in enumerate(servicos_detalhados):
                 with st.container(border=True):
-                    col_s1, col_s2 = st.columns()
+                    # CORRIGIDO: Passado explicitamente o número 2 para st.columns()
+                    col_s1, col_s2 = st.columns(2)
                     col_s1.write(f"**{s['nome_detalhado']}**")
                     col_s1.write(f"Preço Base Oficial: R$ {s['preco']:.2f}")
                     
