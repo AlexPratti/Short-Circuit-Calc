@@ -99,6 +99,7 @@ def buscar_avaliacoes_profissional(nome_prof):
     if dados and not isinstance(dados, dict):
         return dados
     return []
+    
 # --- CÁLCULO LOGÍSTICO DE DESLOCAMENTO (LINHARES-ES) ---
 def calcular_taxa_deslocamento(loc_cliente, loc_profissional):
     VISITA_BASE = 40.00
@@ -375,6 +376,7 @@ elif menu == "Área do Cliente" and not st.session_state["user_logged"]:
                         st.success("Cadastro efetuado com sucesso! Faça o login na aba ao lado.")
                     else:
                         st.error(f"Erro ao salvar cadastro: {retorno['detalhes']}")
+                        
 # --- TELAS DO SISTEMA: 3. PAINEL DO CLIENTE LOGADO ---
 if menu.startswith("Buscar Serviços"):
     dados_brutos_c = st.session_state['cliente_dados']
@@ -439,7 +441,6 @@ if menu.startswith("Buscar Serviços"):
                 with st.container(border=True):
                     col_s1, col_s2 = st.columns(2)
                     
-                    # Exibição condicional da métrica por Unidade se aplicável ao serviço
                     tem_unidade = str(s.get('metrica', '')).strip().lower() == "unidade"
                     
                     if tem_unidade:
@@ -474,6 +475,7 @@ if menu.startswith("Buscar Serviços"):
                             st.rerun()
         else:
             st.info("Nenhum preço detalhado fixado para esta categoria ainda.")
+            
         st.markdown("---")
         st.markdown("#### 🧔 Profissionais Disponíveis na sua Área:")
         
