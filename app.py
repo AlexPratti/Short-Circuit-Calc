@@ -185,6 +185,7 @@ st.sidebar.info(f"📧 {email_admin_seguro}\n\n📞 {tel_formatado}")
 st.sidebar.markdown("---")
 st.sidebar.caption("💳 **Chave PIX para Pagamentos:**")
 st.sidebar.code(chave_pix_segura, language="text")
+
 # --- TELAS DO SISTEMA: 1. ÁREA ADMINISTRATIVA ---
 if menu == "Área Administrativa" and not st.session_state["user_logged"]:
     st.title("🔒 Login Administrativo")
@@ -226,12 +227,12 @@ elif menu == "Gerenciar Serviços/Preços":
             else:
                 st.error("Erro interno ao tentar salvar dados no banco.")
 
-    # --- NOVA FUNCIONALIDADE: MODIFICAR PREÇO BASE OFICIAL ---
+    # --- MODIFICAR PREÇO BASE OFICIAL ---
     st.markdown("---")
     st.subheader("✏️ Modificar Preço Base Oficial")
     
     dados_edicao = executar_select_direto("app_servicos_detalhes", "?select=id,categoria,nome_detalhado,metrica,preco&ativo=eq.true")
-    if dados_edicao and not isinstance(dados_ edicao, dict):
+    if dados_edicao and not isinstance(dados_edicao, dict):
         lista_opcoes_edicao = [f"{item['id']} - [{item['categoria']}] {item['nome_detalhado']} (Atual: R$ {item['preco']:.2f})" for item in dados_edicao]
         servico_para_editar = st.selectbox("Selecione o serviço para alterar o preço:", lista_opcoes_edicao, key="sb_editar_preco")
         
@@ -244,7 +245,7 @@ elif menu == "Gerenciar Serviços/Preços":
             if st.button("Atualizar Preço Oficial"):
                 ret_upd = executar_update_direto("app_servicos_detalhes", f"?id=eq.{id_servico_edit}", {"preco": novo_preco_base})
                 if ret_upd["sucesso"]:
-                    st.success("Preço Base Oficial atualizado com sucesso!")
+                    st.success("Preço Base Oficial updated com sucesso!")
                     st.rerun()
                 else:
                     st.error("Erro ao atualizar o preço no banco de dados.")
@@ -269,6 +270,7 @@ elif menu == "Gerenciar Serviços/Preços":
                 st.error("Erro ao desativar do banco de dados.")
     else:
         st.info("Nenhum preço listado ou banco de dados aguardando novos registros ativos.")
+        
 elif menu == "Cadastrar Profissional":
     st.title("👨‍🔧 Cadastrar Novo Profissional")
     nome = st.text_input("Nome Completo do Profissional")
