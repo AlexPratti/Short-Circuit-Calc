@@ -498,10 +498,11 @@ if menu.startswith("Buscar Serviços"):
         else:
             st.info("Nenhum preço detalhado fixado para esta categoria ainda.")
             
-        st.markdown("---")
+                st.markdown("---")
         st.markdown("#### 🧔 Profissionais Disponíveis na sua Área:")
         
-        lista_prof = executar_select_direto("app_servicos_profissionais", f"?select=nome,localidade,telefone&servico_principal=eq.{cat_ativa}&ativo=eq.true")
+        # Correção do filtro usando a variável cat_selecionada do novo dropdown
+        lista_prof = executar_select_direto("app_servicos_profissionais", f"?select=nome,localidade,telefone&servico_principal=eq.{cat_selecionada}&ativo=eq.true")
         
         if not lista_prof or isinstance(lista_prof, dict):
             lista_prof = [{"nome": "Carlos Silva", "localidade": "Centro", "telefone": "11999999999"}]
@@ -532,7 +533,7 @@ if menu.startswith("Buscar Serviços"):
                 bairro_cliente = cliente_info_busca.get('endereco', 'Centro')
                 valor_visita, tipo_distancia = calcular_taxa_deslocamento(bairro_cliente, prof_item['localidade'])
                 
-                st.info(f"📋 **Logística para seu Endereço ({bairro_cliente}):** Visita Técnica + Deslocamento estimado em **R$ {valor_visita:.2f}** ({tipo_distancia})")
+                st.info(f"📋 **Logística para seu Endereço ({bairro_cliente}):** Visita Técnico + Deslocamento estimado em **R$ {valor_visita:.2f}** ({tipo_distancia})")
                 
                 if st.session_state["carrinho"]:
                     texto_servicos = ""
@@ -557,7 +558,7 @@ if menu.startswith("Buscar Serviços"):
                     total_geral_calculado = valor_visita
                     mensagem_texto = (
                         f"Olá {prof_item['nome']},\n\n"
-                        f"Gostaria de um orçamento para serviços na categoria de **{cat_ativa}**.\n"
+                        f"Gostaria de um orçamento para serviços na categoria de **{cat_selecionada}**.\n"
                         f"**Cliente:** {cliente_info_busca.get('nome_completo', 'Cliente')}\n"
                         f"**Endereço:** {bairro_cliente}\n"
                         f"Taxa de Visita Inicial: R$ {valor_visita:.2f}"
