@@ -209,7 +209,6 @@ elif menu == "Gerenciar Serviços/Preços":
     nova_cat = st.text_input("Categoria Principal (Ex: Manutenção Elétrica, Climatização e Ventilação)")
     novo_serv = st.text_input("Serviço Detalhado (Ex: Instalação de Ar Condicionado Split de 9.000 BTUs)")
     
-    # Campo para definição da métrica opcional exigida
     nova_metrica = st.selectbox("Este serviço possui métrica?", ["Sem Métrica", "Unidade"])
     novo_preco = st.number_input("Preço Sugerido (R$)", min_value=0.0, step=10.0)
     
@@ -238,7 +237,6 @@ elif menu == "Gerenciar Serviços/Preços":
         servico_para_editar = st.selectbox("Selecione o serviço para alterar o preço:", lista_opcoes_edicao, key="sb_editar_preco")
         
         id_servico_edit = servico_para_editar.split(" - ")[0]
-        # Recupera o registro atual selecionado
         item_selecionado = next((item for item in dados_edicao if str(item['id']) == id_servico_edit), None)
         
         if item_selecionado:
@@ -246,7 +244,7 @@ elif menu == "Gerenciar Serviços/Preços":
             if st.button("Atualizar Preço Oficial"):
                 ret_upd = executar_update_direto("app_servicos_detalhes", f"?id=eq.{id_servico_edit}", {"preco": novo_preco_base})
                 if ret_upd["sucesso"]:
-                    st.success("Preço Base Oficial updated com sucesso!")
+                    st.success("Preço Base Oficial atualizado com sucesso!")
                     st.rerun()
                 else:
                     st.error("Erro ao atualizar o preço no banco de dados.")
@@ -423,56 +421,80 @@ if menu.startswith("Buscar Serviços"):
                 st.rerun()
                 
     st.markdown("---")
-    categorias = buscar_categorias()
-    st.subheader("Selecione uma categoria para explorar os serviços:")
+    categorias_sistema = buscar_categorias()
     
-    colunas = st.columns(len(categorias) if len(categorias) > 0 else 1)
-    for idx, cat in enumerate(categorias):
-        if colunas[idx].button(f"🔹 {cat}", use_container_width=True):
-            st.session_state["categoria_ativa"] = cat
-            
-    if st.session_state["categoria_ativa"]:
-        cat_ativa = st.session_state["categoria_ativa"]
-        st.markdown(f"### 🛠️ Lista de opções para: **{cat_ativa}**")
-        servicos_detalhados = buscar_servicos_por_categoria(cat_ativa)
+    st.subheader("🔍 Escolha o Serviço Residencial")
+    
+    # 1º Dropdown: Seleção de Categoria Geral
+    cat_selecionada = st.selectbox("🗂️ Selecione a Categoria Desejada:", ["Escolha uma Categoria..."] + categorias_sistema)
+    
+    if cat_selecionada != "Escolha uma Categoria...":
+        st.session_state["categoria_ativa"] = cat_selecionada
+        servicos_da_categoria = buscar_servicos_por_categoria(cat_selecionada)
         
-        if servicos_detalhados:
-            for idx_s, s in enumerate(servicos_detalhados):
-                with st.container(border=True):
-                    col_s1, col_s2 = st.columns(2)
-                    
-                    tem_unidade = str(s.get('metrica', '')).strip().lower() == "unidade"
-                    
-                    if tem_unidade:
-                        col_s1.write(f"**{s['nome_detalhado']}**")
-                        qtd_selecionada = col_s1.number_input(f"Selecione a quantidade para este item:", min_value=1, value=1, step=1, key=f"qtd_serv_{s['id']}")
-                        preco_calculado = float(s['preco']) * qtd_selecionada
-                        col_s1.write(f"Preço Base Oficial: R$ {s['preco']:.2f} por Unidade")
-                        col_s1.write(f"**Subtotal do Item:** R$ {preco_calculado:.2f}")
-                        nome_final_carrinho = f"{s['nome_detalhado']} (Qtd: {qtd_selecionada})"
-                    else:
-                        col_s1.write(f"**{s['nome_detalhado']}**")
-                        col_s1.write(f"Preço Base Oficial: R$ {s['preco']:.2f}")
-                        preco_calculado = float(s['preco'])
-                        nome_final_carrinho = s['nome_detalhado']
-                    
-                    ja_no_carrinho = any(item['nome'].startswith(s['nome_detalhado']) for item in st.session_state["carrinho"])
-                    
-                    if ja_no_carrinho:
-                        if col_s2.button("➖ Remover do Carrinho", key=f"rem_list_{idx_s}", use_container_width=True):
-                            for i, item_c in enumerate(st.session_state["carrinho"]):
-                                if item_c['nome'].startswith(s['nome_detalhado']):
-                                    st.session_state["carrinho"].pop(i)
-                                    break
-                            st.rerun()
-                    else:
-                        if col_s2.button("➕ Adicionar", key=f"add_cart_{idx_s}", use_container_width=True):
-                            st.session_state["carrinho"].append({
-                                "nome": nome_final_carrinho,
-                                "preco": preco_calculado,
-                                "categoria": cat_ativa
-                            })
-                            st.rerun()
+        if servicos_da_categoria:
+            lista_nomes_servicos = [s['nome_detalhado'] for s in servicos_da_categoria]
+            
+            # 2º Dropdown: Seleção de Serviço Dependente da Categoria
+            servico_nome_sel = st.selectbox("🛠️ Escolha o Serviço Específico:", ["Escolha um Serviço..."] + lista_nomes_servicos)
+            
+            if servico_nome_sel != "Escolha um Serviço...":
+                # Recupera o objeto completo do serviço selecionado
+                s_objeto = next((item for item in servicos_da_categoria if item['nome_detalhado'] == servico_nome_sel), None)
+                
+                if s_objeto:
+                    st.markdown("---")
+                    with st.container(border=True):
+                        col_card1, col_card2 = st.columns(2)
+                        
+                        tem_unidade = str(s_objeto.get('metrica', '')).strip().lower() == "unidade"
+                        ja_no_carrinho = any(item['nome'].startswith(s_objeto['nome_detalhado']) for item in st.session_state["carrinho"])
+                        
+                        if tem_unidade:
+                            col_card1.write(f"### {s_objeto['nome_detalhado']}")
+                            col_card1.write(f"**Preço Base Oficial:** R$ {s_objeto['preco']:.2f} por Unidade")
+                            
+                            # Métrica Unidade inicializa em 0 para obrigar preenchimento
+                            qtd_input = col_card1.number_input("Digite a Quantidade (Obrigatório):", min_value=0, value=0, step=1, key=f"input_qtd_{s_objeto['id']}")
+                            preco_total_calculado = float(s_objeto['preco']) * qtd_input
+                            
+                            col_card1.write(f"💰 **Subtotal Atual:** R$ {preco_total_calculado:.2f}")
+                            nome_item_final = f"{s_objeto['nome_detalhado']} (Qtd: {qtd_input})"
+                            
+                            # Trava de segurança: só libera o botão se a quantidade for maior que zero
+                            if qtd_input == 0:
+                                col_card2.warning("⚠️ Insira uma quantidade maior que 0 para habilitar a inclusão.")
+                            else:
+                                if ja_no_carrinho:
+                                    if col_card2.button("➖ Remover do Carrinho", key=f"btn_rem_box_{s_objeto['id']}", use_container_width=True):
+                                        st.session_state["carrinho"] = [item for item in st.session_state["carrinho"] if not item['nome'].startswith(s_objeto['nome_detalhado'])]
+                                        st.rerun()
+                                else:
+                                    if col_card2.button("➕ Adicionar ao Carrinho", key=f"btn_add_box_{s_objeto['id']}", use_container_width=True):
+                                        st.session_state["carrinho"].append({
+                                            "nome": nome_item_final,
+                                            "preco": preco_total_calculado,
+                                            "categoria": cat_selecionada
+                                        })
+                                        st.rerun()
+                        else:
+                            # Serviços fixos sem métrica quantitativa
+                            col_card1.write(f"### {s_objeto['nome_detalhado']}")
+                            col_card1.write(f"**Preço Base Oficial:** R$ {s_objeto['preco']:.2f}")
+                            preco_total_calculado = float(s_objeto['preco'])
+                            
+                            if ja_no_carrinho:
+                                if col_card2.button("➖ Remover do Carrinho", key=f"btn_rem_box_{s_objeto['id']}", use_container_width=True):
+                                    st.session_state["carrinho"] = [item for item in st.session_state["carrinho"] if not item['nome'].startswith(s_objeto['nome_detalhado'])]
+                                    st.rerun()
+                            else:
+                                if col_card2.button("➕ Adicionar ao Carrinho", key=f"btn_add_box_{s_objeto['id']}", use_container_width=True):
+                                    st.session_state["carrinho"].append({
+                                        "nome": s_objeto['nome_detalhado'],
+                                        "preco": preco_total_calculado,
+                                        "categoria": cat_selecionada
+                                    })
+                                    st.rerun()
         else:
             st.info("Nenhum preço detalhado fixado para esta categoria ainda.")
             
