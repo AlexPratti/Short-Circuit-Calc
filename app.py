@@ -249,6 +249,38 @@ elif menu == "Gerenciar Serviços/Preços":
                 else:
                     st.error("Erro ao atualizar o preço no banco de dados.")
 
+    # --- NOVA FUNCIONALIDADE: EXCLUIR CATEGORIA INTEIRA ---
+    st.markdown("---")
+    st.subheader("❌ Excluir Categoria Inteira")
+    st.warning("Aviso: Excluir uma categoria desativará todos os serviços vinculados a ela automaticamente.")
+    
+    lista_categorias_exclusao = buscar_categorias()
+    if lista_categorias_exclusao:
+        cat_para_excluir = st.selectbox("Selecione a categoria para remover completamente:", ["Selecione..."] + lista_categorias_exclusao, key="sb_excluir_categoria_completa")
+        
+        if cat_para_excluir != "Selecione...":
+            if st.button("Confirmar Exclusão da Categoria e Serviços", type="primary"):
+                try:
+                    # Dispara a chamada RPC direta para a função do Supabase
+                    url_rpc = f"{URL_PROJETO_REAL}/rest/v1/rpc/desativar_categoria_e_servicos"
+                    headers_rpc = {
+                        "apikey": CHAVE_PROJETO_REAL,
+                        "Authorization": f"Bearer {CHAVE_PROJETO_REAL}",
+                        "Content-Type": "application/json"
+                    }
+                    payload_rpc = {"cat_nome": cat_para_excluir}
+                    resposta_rpc = requests.post(url_rpc, headers=headers_rpc, json=payload_rpc)
+                    
+                    if 200 <= resposta_rpc.status_code < 300:
+                        st.success(f"Categoria '{cat_para_excluir}' e todos os seus serviços foram desativados com sucesso!")
+                        st.rerun()
+                    else:
+                        st.error(f"Erro ao tentar processar no banco: Status {resposta_rpc.status_code}")
+                except Exception as e:
+                    st.error(f"Erro de conexão com o banco: {str(e)}")
+    else:
+        st.info("Nenhuma categoria ativa encontrada para exclusão.")
+
     st.markdown("---")
     st.subheader("Tabela de Preços Cadastrados")
     dados_tabela = executar_select_direto("app_servicos_detalhes", "?select=id,categoria,nome_detalhado,metrica,preco&ativo=eq.true")
@@ -256,7 +288,7 @@ elif menu == "Gerenciar Serviços/Preços":
         st.dataframe(dados_tabela, use_container_width=True)
         
         st.markdown("---")
-        st.subheader("❌ Desativar Serviço (Exclusão Lógica)")
+        st.subheader("❌ Desativar Serviço Individual")
         lista_opcoes_servicos = [f"{item['id']} - {item['categoria']}: {item['nome_detalhado']}" for item in dados_tabela]
         servico_para_excluir = st.selectbox("Selecione o serviço para desativar do app:", lista_opcoes_servicos)
         if st.button("Desativar Serviço Selecionado"):
@@ -269,6 +301,7 @@ elif menu == "Gerenciar Serviços/Preços":
                 st.error("Erro ao desativar do banco de dados.")
     else:
         st.info("Nenhum preço listado ou banco de dados aguardando novos registros ativos.")
+
         
 elif menu == "Cadastrar Profissional":
     st.title("👨‍🔧 Cadastrar Novo Profissional")
