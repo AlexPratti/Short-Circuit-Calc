@@ -499,6 +499,8 @@ if menu.startswith("Buscar Serviços"):
             st.info("Nenhum preço detalhado fixado para esta categoria ainda.")
             
                 st.markdown("---")
+            
+st.markdown("---")
         st.markdown("#### 🧔 Profissionais Disponíveis na sua Área:")
         
         # Correção do filtro usando a variável cat_selecionada do novo dropdown
